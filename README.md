@@ -16,6 +16,8 @@
 
  [![GitHub release](https://img.shields.io/github/v/release/polygon-io/mcp_polygon)](https://github.com/polygon-io/mcp_polygon/releases)
 
+[![Trust Score](https://archestra.ai/mcp-catalog/api/badge/quality/polygon-io/mcp_polygon)](https://archestra.ai/mcp-catalog/polygon-io__mcp_polygon)
+
 A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that provides access to [Polygon.io](https://polygon.io?utm_campaign=mcp&utm_medium=referral&utm_source=github) financial market data API through an LLM-friendly interface.
 
 ## Overview
