@@ -5,6 +5,26 @@ services:
       - .:/app
     container_name: mcp_polygon_server
     environment:
+      # Required
       - POLYGON_API_KEY=${POLYGON_API_KEY}
+      # Transport configuration
+      - MCP_TRANSPORT=${MCP_TRANSPORT:-stdio}
+      # Server settings
+      - MCP_DEBUG=${MCP_DEBUG:-false}
+      - MCP_LOG_LEVEL=${MCP_LOG_LEVEL:-INFO}
+      # HTTP settings (for SSE and Streamable-HTTP)
+      - MCP_HOST=${MCP_HOST:-127.0.0.1}
+      - MCP_PORT=${MCP_PORT:-8000}
+      # SSE-specific settings
+      - MCP_MOUNT_PATH=${MCP_MOUNT_PATH:-/}
+      - MCP_SSE_PATH=${MCP_SSE_PATH:-/sse}
+      - MCP_MESSAGE_PATH=${MCP_MESSAGE_PATH:-/messages/}
+      # Streamable-HTTP-specific settings
+      - MCP_STREAMABLE_HTTP_PATH=${MCP_STREAMABLE_HTTP_PATH:-/mcp}
+      - MCP_JSON_RESPONSE=${MCP_JSON_RESPONSE:-false}
+      - MCP_STATELESS_HTTP=${MCP_STATELESS_HTTP:-false}
     stdin_open: true
     tty: true
+    # Expose port for HTTP-based transports
+    ports:
+      - "${MCP_PORT:-8000}:${MCP_PORT:-8000}"

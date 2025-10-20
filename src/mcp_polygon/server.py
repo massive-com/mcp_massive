@@ -2001,6 +2001,53 @@ async def get_futures_snapshot(
 # It will be run from entrypoint.py
 
 
-def run(transport: Literal["stdio", "sse", "streamable-http"] = "stdio") -> None:
-    """Run the Polygon MCP server."""
+def run(
+    transport: Literal["stdio", "sse", "streamable-http"] = "stdio",
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    debug: bool = False,
+    log_level: str = "INFO",
+    mount_path: str = "/",
+    sse_path: str = "/sse",
+    message_path: str = "/messages/",
+    streamable_http_path: str = "/mcp",
+    json_response: bool = False,
+    stateless_http: bool = False,
+) -> None:
+    """Run the Polygon MCP server.
+    
+    Args:
+        transport: Transport protocol to use ("stdio", "sse", or "streamable-http")
+        host: Host/IP address to bind to for HTTP transports (sse, streamable-http)
+        port: Port to bind to for HTTP transports (sse, streamable-http)
+        debug: Enable debug mode
+        log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        mount_path: Mount path for SSE transport (e.g., "/github", defaults to root path)
+        sse_path: SSE endpoint path
+        message_path: Message endpoint path (for SSE)
+        streamable_http_path: Streamable HTTP endpoint path
+        json_response: Return JSON instead of JSONRPC for Streamable HTTP (default: False)
+        stateless_http: Use stateless mode (new transport per request) for Streamable HTTP (default: False)
+    """
+    # Update the FastMCP settings
+    poly_mcp.settings.debug = debug
+    poly_mcp.settings.log_level = log_level
+    
+    # Update HTTP-specific settings
+    if transport in ["sse", "streamable-http"]:
+        poly_mcp.settings.host = host
+        poly_mcp.settings.port = port
+        
+        # SSE-specific paths
+        if transport == "sse":
+            poly_mcp.settings.mount_path = mount_path
+            poly_mcp.settings.sse_path = sse_path
+            poly_mcp.settings.message_path = message_path
+        
+        # Streamable HTTP-specific path
+        elif transport == "streamable-http":
+            poly_mcp.settings.streamable_http_path = streamable_http_path
+            poly_mcp.settings.json_response = json_response
+            poly_mcp.settings.stateless_http = stateless_http
+    
     poly_mcp.run(transport)

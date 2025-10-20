@@ -96,16 +96,68 @@ Make sure you complete the various fields.
 ```
 </details>
 
-## Transport Configuration
+## Configuration
 
-By default, STDIO transport is used.
+The Polygon MCP server can be configured using environment variables. See [ENV_VARIABLES.md](ENV_VARIABLES.md) for complete documentation.
 
-To configure [SSE](https://modelcontextprotocol.io/specification/2024-11-05/basic/transports#http-with-sse) or [Streamable HTTP](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http), set the `MCP_TRANSPORT` environment variable.
+### Environment Variables
 
-Example:
+#### Required
+- `POLYGON_API_KEY` - Your Polygon.io API key
 
+#### Transport Configuration
+- `MCP_TRANSPORT` - Transport protocol (`stdio`, `sse`, `streamable-http`). Default: `stdio`
+
+#### Server Settings
+- `MCP_DEBUG` - Enable debug mode (`true`/`false`). Default: `false`
+- `MCP_LOG_LEVEL` - Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`). Default: `INFO`
+
+#### HTTP Settings (for SSE and Streamable-HTTP)
+- `MCP_HOST` - Host/IP to bind to. Default: `127.0.0.1`
+- `MCP_PORT` - Port to bind to. Default: `8000`
+
+#### Path Settings
+- `MCP_MOUNT_PATH` - Mount path for SSE. Default: `/`
+- `MCP_SSE_PATH` - SSE endpoint path. Default: `/sse`
+- `MCP_MESSAGE_PATH` - Message endpoint for SSE. Default: `/messages/`
+- `MCP_STREAMABLE_HTTP_PATH` - Streamable HTTP endpoint. Default: `/mcp`
+
+#### Streamable HTTP Settings
+- `MCP_JSON_RESPONSE` - Return plain JSON instead of JSONRPC (`true`/`false`). Default: `false`
+- `MCP_STATELESS_HTTP` - Use stateless mode, new transport per request (`true`/`false`). Default: `false`
+
+### Examples
+
+Default STDIO transport:
+```bash
+POLYGON_API_KEY=<your_api_key_here> \
+uv run entrypoint.py
+```
+
+SSE transport with custom host/port:
+```bash
+MCP_TRANSPORT=sse \
+MCP_HOST=0.0.0.0 \
+MCP_PORT=9000 \
+POLYGON_API_KEY=<your_api_key_here> \
+uv run entrypoint.py
+```
+
+Streamable HTTP with debug logging:
 ```bash
 MCP_TRANSPORT=streamable-http \
+MCP_LOG_LEVEL=DEBUG \
+MCP_HOST=0.0.0.0 \
+POLYGON_API_KEY=<your_api_key_here> \
+uv run entrypoint.py
+```
+
+Streamable HTTP with JSON response and stateless mode:
+```bash
+MCP_TRANSPORT=streamable-http \
+MCP_JSON_RESPONSE=true \
+MCP_STATELESS_HTTP=true \
+MCP_HOST=0.0.0.0 \
 POLYGON_API_KEY=<your_api_key_here> \
 uv run entrypoint.py
 ```
@@ -146,9 +198,19 @@ Check to ensure you have the [Prerequisites](#prerequisites) installed.
 # Sync dependencies
 uv sync
 
-# Run the server
+# Run the server with default settings (stdio transport)
 POLYGON_API_KEY=your_api_key_here uv run mcp_polygon
+
+# Or run with custom configuration
+MCP_TRANSPORT=streamable-http \
+MCP_HOST=0.0.0.0 \
+MCP_PORT=8080 \
+MCP_LOG_LEVEL=DEBUG \
+POLYGON_API_KEY=your_api_key_here \
+uv run entrypoint.py
 ```
+
+See [ENV_VARIABLES.md](ENV_VARIABLES.md) for all available configuration options.
 
 <details>
   <summary>Local Dev Config for claude_desktop_config.json</summary>
