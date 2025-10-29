@@ -8,20 +8,20 @@ from .formatters import json_to_csv
 
 from datetime import datetime, date
 
-POLYGON_API_KEY = os.environ.get("POLYGON_API_KEY", "")
-if not POLYGON_API_KEY:
-    print("Warning: POLYGON_API_KEY environment variable not set.")
+MASSIVE_API_KEY = os.environ.get("MASSIVE_API_KEY", "")
+if not MASSIVE_API_KEY:
+    print("Warning: MASSIVE_API_KEY environment variable not set.")
 
-version_number = "MCP-Polygon/unknown"
+version_number = "MCP-Massive/unknown"
 try:
-    version_number = f"MCP-Polygon/{version('mcp_polygon')}"
+    version_number = f"MCP-Massive/{version('mcp_massive')}"
 except PackageNotFoundError:
     pass
 
-polygon_client = RESTClient(POLYGON_API_KEY)
+polygon_client = RESTClient(MASSIVE_API_KEY)
 polygon_client.headers["User-Agent"] += f" {version_number}"
 
-poly_mcp = FastMCP("Polygon", dependencies=["polygon"])
+poly_mcp = FastMCP("Massive")
 
 
 @poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
@@ -589,7 +589,7 @@ async def get_ticker_types(
     params: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
-    List all ticker types supported by Polygon.io.
+    List all ticker types supported by Massive.com.
     """
     try:
         results = polygon_client.get_ticker_types(
@@ -664,7 +664,7 @@ async def list_conditions(
     params: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
-    List conditions used by Polygon.io.
+    List conditions used by Massive.com.
     """
     try:
         results = polygon_client.list_conditions(
@@ -688,7 +688,7 @@ async def get_exchanges(
     params: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
-    List exchanges known by Polygon.io.
+    List exchanges known by Massive.com.
     """
     try:
         results = polygon_client.get_exchanges(
@@ -2002,5 +2002,5 @@ async def get_futures_snapshot(
 
 
 def run(transport: Literal["stdio", "sse", "streamable-http"] = "stdio") -> None:
-    """Run the Polygon MCP server."""
+    """Run the Massive MCP server."""
     poly_mcp.run(transport)
