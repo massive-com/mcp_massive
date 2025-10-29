@@ -1,6 +1,6 @@
 [project]
-name = "mcp_polygon"
-version = "0.5.1"
+name = "mcp_massive"
+version = "0.6.0"
 description = "A MCP server project"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -9,8 +9,8 @@ dependencies = [
  "polygon-api-client>=1.15.4",
 ]
 [[project.authors]]
-name = "Polygon"
-email = "support@polygon.io"
+name = "Massive"
+email = "support@massive.com"
 
 [build-system]
 requires = [ "hatchling",]
@@ -24,4 +24,4 @@ dev = [
 ]
 
 [project.scripts]
-mcp_polygon = "mcp_polygon:run"
+mcp_massive = "mcp_massive:main"

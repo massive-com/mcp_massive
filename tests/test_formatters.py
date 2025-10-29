@@ -4,7 +4,7 @@ import io
 
 import pytest
 
-from mcp_polygon.formatters import json_to_csv, _flatten_dict
+from mcp_massive.formatters import json_to_csv, _flatten_dict
 
 
 class TestFlattenDict:
