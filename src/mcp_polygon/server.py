@@ -464,6 +464,34 @@ async def get_snapshot_crypto_book(
 
 
 @poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+async def list_snapshot_options_chain(
+    underlying_asset: str,
+    params: Optional[Dict[str, Any]] = None,
+) -> str:
+    """
+    Get snapshots for all options contracts for an underlying ticker. This provides a comprehensive view of the options chain including pricing, Greeks, implied volatility, and more.
+
+    Common params filters:
+    - expiration_date.gte / expiration_date.lte: Filter by expiration date (YYYY-MM-DD)
+    - strike_price.gte / strike_price.lte: Filter by strike price
+    - contract_type: Filter by "call" or "put"
+    - limit: Number of results (default 10, max 250)
+    - order: Order results based on sort field
+    - sort: Sort field for ordering
+    """
+    try:
+        results = polygon_client.list_snapshot_options_chain(
+            underlying_asset=underlying_asset,
+            params=params,
+            raw=True,
+        )
+
+        return json_to_csv(results.data.decode("utf-8"))
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_market_holidays(
     params: Optional[Dict[str, Any]] = None,
 ) -> str:
