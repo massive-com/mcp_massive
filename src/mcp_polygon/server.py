@@ -464,6 +464,32 @@ async def get_snapshot_crypto_book(
 
 
 @poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+async def list_snapshot_options_chain(
+    underlying_asset: str,
+    limit: Optional[int] = 10,
+    sort: Optional[str] = None,
+    order: Optional[str] = None,
+    params: Optional[Dict[str, Any]] = None,
+) -> str:
+    """
+    Get snapshots for all options contracts for an underlying ticker. This provides a comprehensive view of the options chain including pricing, Greeks, implied volatility, and more.
+    """
+    try:
+        results = polygon_client.list_snapshot_options_chain(
+            underlying_asset=underlying_asset,
+            limit=limit,
+            sort=sort,
+            order=order,
+            params=params,
+            raw=True,
+        )
+
+        return json_to_csv(results.data.decode("utf-8"))
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_market_holidays(
     params: Optional[Dict[str, Any]] = None,
 ) -> str:
