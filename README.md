@@ -150,6 +150,25 @@ uv sync
 MASSIVE_API_KEY=your_api_key_here uv run mcp_massive
 ```
 
+### Running with Docker
+
+You can also run the MCP server using Docker. The repository provides a
+`Dockerfile` and a `docker-compose.yml` to simplify setup.
+
+1. Build the Docker image:
+
+```bash
+docker compose build
+```
+
+2. Start the container, passing in your API key:
+
+```bash
+POLYGON_API_KEY=your_api_key_here docker compose up
+```
+
+This starts the server inside a container named `mcp_polygon_server`.
+
 <details>
   <summary>Local Dev Config for claude_desktop_config.json</summary>
 
