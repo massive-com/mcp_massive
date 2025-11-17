@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.10"
 
 [[package]]
@@ -181,6 +181,20 @@ wheels = [
 ]
 
 [[package]]
+name = "massive"
+version = "2.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "certifi" },
+    { name = "urllib3" },
+    { name = "websockets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d5/ee/49823c94a368173fd6b7d592b8e5e9be3a9df403cdbdada57af4d2ff6453/massive-2.0.1.tar.gz", hash = "sha256:419cd341570435b0998122919edc34cc7031f9d7a9c9ae128e1f228012160d81", size = 44064, upload-time = "2025-10-30T22:44:13.75Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e7/3e/2b02f58960029301a7b5969931efece0f0532d6efa66afcc92a4d801ba3b/massive-2.0.1-py3-none-any.whl", hash = "sha256:666d14f4401b30d7c25d8360817ef040c1a616df109775f8662f3e6078375e76", size = 61893, upload-time = "2025-10-30T22:44:12.476Z" },
+]
+
+[[package]]
 name = "mcp"
 version = "1.15.0"
 source = { registry = "https://pypi.org/simple" }
@@ -213,8 +227,9 @@ name = "mcp-massive"
 version = "0.6.0"
 source = { editable = "." }
 dependencies = [
+    { name = "massive" },
     { name = "mcp", extra = ["cli"] },
-    { name = "polygon-api-client" },
+    { name = "python-dotenv" },
 ]
 
 [package.dev-dependencies]
@@ -226,8 +241,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "massive", specifier = ">=2.0.1" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.15.0" },
-    { name = "polygon-api-client", specifier = ">=1.15.4" },
+    { name = "python-dotenv", specifier = ">=1.0.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -262,20 +278,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f9/e2/3e91f31a7d2b083fe6ef3fa267035b518369d9511ffab804f839851d2779/pluggy-1.6.0.tar.gz", hash = "sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3", size = 69412, upload-time = "2025-05-15T12:30:07.975Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl", hash = "sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746", size = 20538, upload-time = "2025-05-15T12:30:06.134Z" },
-]
-
-[[package]]
-name = "polygon-api-client"
-version = "1.15.4"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "certifi" },
-    { name = "urllib3" },
-    { name = "websockets" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/2c/39/8f2423b65926d7f815370e83acf9b8c09d0965c7cb5b55a78eee52e679f1/polygon_api_client-1.15.4.tar.gz", hash = "sha256:2adb920dac5788732fc95a25dc8650cc843591552c8969c40f5eaaf22aaf7072", size = 37986, upload-time = "2025-09-23T23:25:14.842Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/28/b9/57a53ce17aeb46432b5df3e3ec607d9a0daece740d707798f4f7c423d5b5/polygon_api_client-1.15.4-py3-none-any.whl", hash = "sha256:561b990add5c9a251f42ba1ec85244829a15c09b02f7b08dbf149df8bb509cde", size = 54598, upload-time = "2025-09-23T23:25:13.837Z" },
 ]
 
 [[package]]

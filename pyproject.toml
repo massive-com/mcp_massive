@@ -6,7 +6,8 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "mcp[cli]>=1.15.0",
- "polygon-api-client>=1.15.4",
+    "massive>=2.0.1",
+    "python-dotenv>=1.0.0",
 ]
 [[project.authors]]
 name = "Massive"
