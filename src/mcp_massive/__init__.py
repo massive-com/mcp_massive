@@ -1,6 +1,10 @@
 import os
 from typing import Literal
+from dotenv import load_dotenv
 from .server import run
+
+# Load environment variables from .env file if it exists
+load_dotenv()
 
 __all__ = ["run", "main"]
 

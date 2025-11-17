@@ -2,15 +2,20 @@ import os
 from typing import Optional, Any, Dict, Union, List, Literal
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
-from polygon import RESTClient
+from massive import RESTClient
 from importlib.metadata import version, PackageNotFoundError
+from dotenv import load_dotenv
 from .formatters import json_to_csv
 
 from datetime import datetime, date
 
+# Load environment variables from .env file if it exists
+load_dotenv()
+
 MASSIVE_API_KEY = os.environ.get("MASSIVE_API_KEY", "")
 if not MASSIVE_API_KEY:
     print("Warning: MASSIVE_API_KEY environment variable not set.")
+    print("Please set it in your environment or create a .env file with MASSIVE_API_KEY=your_key")
 
 version_number = "MCP-Massive/unknown"
 try:
@@ -18,8 +23,8 @@ try:
 except PackageNotFoundError:
     pass
 
-polygon_client = RESTClient(MASSIVE_API_KEY)
-polygon_client.headers["User-Agent"] += f" {version_number}"
+massive_client = RESTClient(MASSIVE_API_KEY)
+massive_client.headers["User-Agent"] += f" {version_number}"
 
 poly_mcp = FastMCP("Massive")
 
@@ -40,7 +45,7 @@ async def get_aggs(
     List aggregate bars for a ticker over a given date range in custom time window sizes.
     """
     try:
-        results = polygon_client.get_aggs(
+        results = massive_client.get_aggs(
             ticker=ticker,
             multiplier=multiplier,
             timespan=timespan,
@@ -75,7 +80,7 @@ async def list_aggs(
     Iterate through aggregate bars for a ticker over a given date range.
     """
     try:
-        results = polygon_client.list_aggs(
+        results = massive_client.list_aggs(
             ticker=ticker,
             multiplier=multiplier,
             timespan=timespan,
@@ -106,7 +111,7 @@ async def get_grouped_daily_aggs(
     Get grouped daily bars for entire market for a specific date.
     """
     try:
-        results = polygon_client.get_grouped_daily_aggs(
+        results = massive_client.get_grouped_daily_aggs(
             date=date,
             adjusted=adjusted,
             include_otc=include_otc,
@@ -132,7 +137,7 @@ async def get_daily_open_close_agg(
     Get daily open, close, high, and low for a specific ticker and date.
     """
     try:
-        results = polygon_client.get_daily_open_close_agg(
+        results = massive_client.get_daily_open_close_agg(
             ticker=ticker, date=date, adjusted=adjusted, params=params, raw=True
         )
 
@@ -151,7 +156,7 @@ async def get_previous_close_agg(
     Get previous day's open, close, high, and low for a specific ticker.
     """
     try:
-        results = polygon_client.get_previous_close_agg(
+        results = massive_client.get_previous_close_agg(
             ticker=ticker, adjusted=adjusted, params=params, raw=True
         )
 
@@ -177,7 +182,7 @@ async def list_trades(
     Get trades for a ticker symbol.
     """
     try:
-        results = polygon_client.list_trades(
+        results = massive_client.list_trades(
             ticker=ticker,
             timestamp=timestamp,
             timestamp_lt=timestamp_lt,
@@ -205,7 +210,7 @@ async def get_last_trade(
     Get the most recent trade for a ticker symbol.
     """
     try:
-        results = polygon_client.get_last_trade(ticker=ticker, params=params, raw=True)
+        results = massive_client.get_last_trade(ticker=ticker, params=params, raw=True)
 
         return json_to_csv(results.data.decode("utf-8"))
     except Exception as e:
@@ -222,7 +227,7 @@ async def get_last_crypto_trade(
     Get the most recent trade for a crypto pair.
     """
     try:
-        results = polygon_client.get_last_crypto_trade(
+        results = massive_client.get_last_crypto_trade(
             from_=from_, to=to, params=params, raw=True
         )
 
@@ -248,7 +253,7 @@ async def list_quotes(
     Get quotes for a ticker symbol.
     """
     try:
-        results = polygon_client.list_quotes(
+        results = massive_client.list_quotes(
             ticker=ticker,
             timestamp=timestamp,
             timestamp_lt=timestamp_lt,
@@ -276,7 +281,7 @@ async def get_last_quote(
     Get the most recent quote for a ticker symbol.
     """
     try:
-        results = polygon_client.get_last_quote(ticker=ticker, params=params, raw=True)
+        results = massive_client.get_last_quote(ticker=ticker, params=params, raw=True)
 
         return json_to_csv(results.data.decode("utf-8"))
     except Exception as e:
@@ -293,7 +298,7 @@ async def get_last_forex_quote(
     Get the most recent forex quote.
     """
     try:
-        results = polygon_client.get_last_forex_quote(
+        results = massive_client.get_last_forex_quote(
             from_=from_, to=to, params=params, raw=True
         )
 
@@ -314,7 +319,7 @@ async def get_real_time_currency_conversion(
     Get real-time currency conversion.
     """
     try:
-        results = polygon_client.get_real_time_currency_conversion(
+        results = massive_client.get_real_time_currency_conversion(
             from_=from_,
             to=to,
             amount=amount,
@@ -341,7 +346,7 @@ async def list_universal_snapshots(
     Get universal snapshots for multiple assets of a specific type.
     """
     try:
-        results = polygon_client.list_universal_snapshots(
+        results = massive_client.list_universal_snapshots(
             type=type,
             ticker_any_of=ticker_any_of,
             order=order,
@@ -367,7 +372,7 @@ async def get_snapshot_all(
     Get a snapshot of all tickers in a market.
     """
     try:
-        results = polygon_client.get_snapshot_all(
+        results = massive_client.get_snapshot_all(
             market_type=market_type,
             tickers=tickers,
             include_otc=include_otc,
@@ -391,7 +396,7 @@ async def get_snapshot_direction(
     Get gainers or losers for a market.
     """
     try:
-        results = polygon_client.get_snapshot_direction(
+        results = massive_client.get_snapshot_direction(
             market_type=market_type,
             direction=direction,
             include_otc=include_otc,
@@ -414,7 +419,7 @@ async def get_snapshot_ticker(
     Get snapshot for a specific ticker.
     """
     try:
-        results = polygon_client.get_snapshot_ticker(
+        results = massive_client.get_snapshot_ticker(
             market_type=market_type, ticker=ticker, params=params, raw=True
         )
 
@@ -433,7 +438,7 @@ async def get_snapshot_option(
     Get snapshot for a specific option contract.
     """
     try:
-        results = polygon_client.get_snapshot_option(
+        results = massive_client.get_snapshot_option(
             underlying_asset=underlying_asset,
             option_contract=option_contract,
             params=params,
@@ -454,7 +459,7 @@ async def get_snapshot_crypto_book(
     Get snapshot for a crypto ticker's order book.
     """
     try:
-        results = polygon_client.get_snapshot_crypto_book(
+        results = massive_client.get_snapshot_crypto_book(
             ticker=ticker, params=params, raw=True
         )
 
@@ -471,7 +476,7 @@ async def get_market_holidays(
     Get upcoming market holidays and their open/close times.
     """
     try:
-        results = polygon_client.get_market_holidays(params=params, raw=True)
+        results = massive_client.get_market_holidays(params=params, raw=True)
 
         return json_to_csv(results.data.decode("utf-8"))
     except Exception as e:
@@ -486,7 +491,7 @@ async def get_market_status(
     Get current trading status of exchanges and financial markets.
     """
     try:
-        results = polygon_client.get_market_status(params=params, raw=True)
+        results = massive_client.get_market_status(params=params, raw=True)
 
         return json_to_csv(results.data.decode("utf-8"))
     except Exception as e:
@@ -513,7 +518,7 @@ async def list_tickers(
     Query supported ticker symbols across stocks, indices, forex, and crypto.
     """
     try:
-        results = polygon_client.list_tickers(
+        results = massive_client.list_tickers(
             ticker=ticker,
             type=type,
             market=market,
@@ -545,7 +550,7 @@ async def get_ticker_details(
     Get detailed information about a specific ticker.
     """
     try:
-        results = polygon_client.get_ticker_details(
+        results = massive_client.get_ticker_details(
             ticker=ticker, date=date, params=params, raw=True
         )
 
@@ -567,7 +572,7 @@ async def list_ticker_news(
     Get recent news articles for a stock ticker.
     """
     try:
-        results = polygon_client.list_ticker_news(
+        results = massive_client.list_ticker_news(
             ticker=ticker,
             published_utc=published_utc,
             limit=limit,
@@ -592,7 +597,7 @@ async def get_ticker_types(
     List all ticker types supported by Massive.com.
     """
     try:
-        results = polygon_client.get_ticker_types(
+        results = massive_client.get_ticker_types(
             asset_class=asset_class, locale=locale, params=params, raw=True
         )
 
@@ -613,7 +618,7 @@ async def list_splits(
     Get historical stock splits.
     """
     try:
-        results = polygon_client.list_splits(
+        results = massive_client.list_splits(
             ticker=ticker,
             execution_date=execution_date,
             reverse_split=reverse_split,
@@ -640,7 +645,7 @@ async def list_dividends(
     Get historical cash dividends.
     """
     try:
-        results = polygon_client.list_dividends(
+        results = massive_client.list_dividends(
             ticker=ticker,
             ex_dividend_date=ex_dividend_date,
             frequency=frequency,
@@ -667,7 +672,7 @@ async def list_conditions(
     List conditions used by Massive.com.
     """
     try:
-        results = polygon_client.list_conditions(
+        results = massive_client.list_conditions(
             asset_class=asset_class,
             data_type=data_type,
             id=id,
@@ -691,7 +696,7 @@ async def get_exchanges(
     List exchanges known by Massive.com.
     """
     try:
-        results = polygon_client.get_exchanges(
+        results = massive_client.get_exchanges(
             asset_class=asset_class, locale=locale, params=params, raw=True
         )
 
@@ -728,7 +733,7 @@ async def list_stock_financials(
     Get fundamental financial data for companies.
     """
     try:
-        results = polygon_client.vx.list_stock_financials(
+        results = massive_client.vx.list_stock_financials(
             ticker=ticker,
             cik=cik,
             company_name=company_name,
@@ -776,7 +781,7 @@ async def list_ipos(
     Retrieve upcoming or historical IPOs.
     """
     try:
-        results = polygon_client.vx.list_ipos(
+        results = massive_client.vx.list_ipos(
             ticker=ticker,
             listing_date=listing_date,
             listing_date_lt=listing_date_lt,
@@ -813,7 +818,7 @@ async def list_short_interest(
     Retrieve short interest data for stocks.
     """
     try:
-        results = polygon_client.list_short_interest(
+        results = massive_client.list_short_interest(
             ticker=ticker,
             settlement_date=settlement_date,
             settlement_date_lt=settlement_date_lt,
@@ -849,7 +854,7 @@ async def list_short_volume(
     Retrieve short volume data for stocks.
     """
     try:
-        results = polygon_client.list_short_volume(
+        results = massive_client.list_short_volume(
             ticker=ticker,
             date=date,
             date_lt=date_lt,
@@ -885,7 +890,7 @@ async def list_treasury_yields(
     Retrieve treasury yield data.
     """
     try:
-        results = polygon_client.list_treasury_yields(
+        results = massive_client.list_treasury_yields(
             date=date,
             date_lt=date_lt,
             date_lte=date_lte,
@@ -919,7 +924,7 @@ async def list_inflation(
     Get inflation data from the Federal Reserve.
     """
     try:
-        results = polygon_client.list_inflation(
+        results = massive_client.list_inflation(
             date=date,
             date_any_of=date_any_of,
             date_gt=date_gt,
@@ -989,7 +994,7 @@ async def list_benzinga_analyst_insights(
     List Benzinga analyst insights.
     """
     try:
-        results = polygon_client.list_benzinga_analyst_insights(
+        results = massive_client.list_benzinga_analyst_insights(
             date=date,
             date_any_of=date_any_of,
             date_gt=date_gt,
@@ -1077,7 +1082,7 @@ async def list_benzinga_analysts(
     List Benzinga analysts.
     """
     try:
-        results = polygon_client.list_benzinga_analysts(
+        results = massive_client.list_benzinga_analysts(
             benzinga_id=benzinga_id,
             benzinga_id_any_of=benzinga_id_any_of,
             benzinga_id_gt=benzinga_id_gt,
@@ -1128,7 +1133,7 @@ async def list_benzinga_consensus_ratings(
     List Benzinga consensus ratings for a ticker.
     """
     try:
-        results = polygon_client.list_benzinga_consensus_ratings(
+        results = massive_client.list_benzinga_consensus_ratings(
             ticker=ticker,
             date=date,
             date_gt=date_gt,
@@ -1209,7 +1214,7 @@ async def list_benzinga_earnings(
     List Benzinga earnings.
     """
     try:
-        results = polygon_client.list_benzinga_earnings(
+        results = massive_client.list_benzinga_earnings(
             date=date,
             date_any_of=date_any_of,
             date_gt=date_gt,
@@ -1291,7 +1296,7 @@ async def list_benzinga_firms(
     List Benzinga firms.
     """
     try:
-        results = polygon_client.list_benzinga_firms(
+        results = massive_client.list_benzinga_firms(
             benzinga_id=benzinga_id,
             benzinga_id_any_of=benzinga_id_any_of,
             benzinga_id_gt=benzinga_id_gt,
@@ -1361,7 +1366,7 @@ async def list_benzinga_guidance(
     List Benzinga guidance.
     """
     try:
-        results = polygon_client.list_benzinga_guidance(
+        results = massive_client.list_benzinga_guidance(
             date=date,
             date_any_of=date_any_of,
             date_gt=date_gt,
@@ -1418,71 +1423,48 @@ async def list_benzinga_guidance(
 @poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def list_benzinga_news(
     published: Optional[str] = None,
-    published_any_of: Optional[str] = None,
-    published_gt: Optional[str] = None,
-    published_gte: Optional[str] = None,
-    published_lt: Optional[str] = None,
-    published_lte: Optional[str] = None,
-    last_updated: Optional[str] = None,
-    last_updated_any_of: Optional[str] = None,
-    last_updated_gt: Optional[str] = None,
-    last_updated_gte: Optional[str] = None,
-    last_updated_lt: Optional[str] = None,
-    last_updated_lte: Optional[str] = None,
-    tickers: Optional[str] = None,
-    tickers_all_of: Optional[str] = None,
-    tickers_any_of: Optional[str] = None,
     channels: Optional[str] = None,
-    channels_all_of: Optional[str] = None,
-    channels_any_of: Optional[str] = None,
     tags: Optional[str] = None,
-    tags_all_of: Optional[str] = None,
-    tags_any_of: Optional[str] = None,
     author: Optional[str] = None,
-    author_any_of: Optional[str] = None,
-    author_gt: Optional[str] = None,
-    author_gte: Optional[str] = None,
-    author_lt: Optional[str] = None,
-    author_lte: Optional[str] = None,
-    limit: Optional[int] = 10,
+    stocks: Optional[str] = None,
+    tickers: Optional[str] = None,
+    limit: Optional[int] = 100,
     sort: Optional[str] = None,
-    params: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
-    List Benzinga news.
+    Retrieve real-time structured, timestamped news articles from Benzinga v2 API, including headlines, 
+    full-text content, tickers, categories, and more. Each article entry contains metadata such as author, 
+    publication time, and topic channels, as well as optional elements like teaser summaries, article body text, 
+    and images. Articles can be filtered by ticker and time, and are returned in a consistent format for easy 
+    parsing and integration. This endpoint is ideal for building alerting systems, autonomous risk analysis, 
+    and sentiment-driven trading strategies.
+    
+    Args:
+        published: The timestamp (formatted as an ISO 8601 timestamp) when the news article was originally 
+                  published. Value must be an integer timestamp in seconds or formatted 'yyyy-mm-dd'.
+        channels: Filter for arrays that contain the value (e.g., 'News', 'Price Target').
+        tags: Filter for arrays that contain the value.
+        author: The name of the journalist or entity that authored the news article.
+        stocks: Filter for arrays that contain the value.
+        tickers: Filter for arrays that contain the value.
+        limit: Limit the maximum number of results returned. Defaults to 100 if not specified. 
+               The maximum allowed limit is 50000.
+        sort: A comma separated list of sort columns. For each column, append '.asc' or '.desc' to specify 
+              the sort direction. The sort column defaults to 'published' if not specified. 
+              The sort order defaults to 'desc' if not specified.
     """
     try:
-        results = polygon_client.list_benzinga_news(
+        # Use the v2-specific method from the massive client library
+        # This calls the /benzinga/v2/news endpoint
+        results = massive_client.list_benzinga_news_v2(
             published=published,
-            published_any_of=published_any_of,
-            published_gt=published_gt,
-            published_gte=published_gte,
-            published_lt=published_lt,
-            published_lte=published_lte,
-            last_updated=last_updated,
-            last_updated_any_of=last_updated_any_of,
-            last_updated_gt=last_updated_gt,
-            last_updated_gte=last_updated_gte,
-            last_updated_lt=last_updated_lt,
-            last_updated_lte=last_updated_lte,
-            tickers=tickers,
-            tickers_all_of=tickers_all_of,
-            tickers_any_of=tickers_any_of,
             channels=channels,
-            channels_all_of=channels_all_of,
-            channels_any_of=channels_any_of,
             tags=tags,
-            tags_all_of=tags_all_of,
-            tags_any_of=tags_any_of,
             author=author,
-            author_any_of=author_any_of,
-            author_gt=author_gt,
-            author_gte=author_gte,
-            author_lt=author_lt,
-            author_lte=author_lte,
+            stocks=stocks,
+            tickers=tickers,
             limit=limit,
             sort=sort,
-            params=params,
             raw=True,
         )
 
@@ -1555,7 +1537,7 @@ async def list_benzinga_ratings(
     List Benzinga ratings.
     """
     try:
-        results = polygon_client.list_benzinga_ratings(
+        results = massive_client.list_benzinga_ratings(
             date=date,
             date_any_of=date_any_of,
             date_gt=date_gt,
@@ -1638,7 +1620,7 @@ async def list_futures_aggregates(
     Get aggregates for a futures contract in a given time range.
     """
     try:
-        results = polygon_client.list_futures_aggregates(
+        results = massive_client.list_futures_aggregates(
             ticker=ticker,
             resolution=resolution,
             window_start=window_start,
@@ -1673,7 +1655,7 @@ async def list_futures_contracts(
     Get a paginated list of futures contracts.
     """
     try:
-        results = polygon_client.list_futures_contracts(
+        results = massive_client.list_futures_contracts(
             product_code=product_code,
             first_trade_date=first_trade_date,
             last_trade_date=last_trade_date,
@@ -1701,7 +1683,7 @@ async def get_futures_contract_details(
     Get details for a single futures contract at a specified point in time.
     """
     try:
-        results = polygon_client.get_futures_contract_details(
+        results = massive_client.get_futures_contract_details(
             ticker=ticker,
             as_of=as_of,
             params=params,
@@ -1732,7 +1714,7 @@ async def list_futures_products(
     Get a list of futures products (including combos).
     """
     try:
-        results = polygon_client.list_futures_products(
+        results = massive_client.list_futures_products(
             name=name,
             name_search=name_search,
             as_of=as_of,
@@ -1764,7 +1746,7 @@ async def get_futures_product_details(
     Get details for a single futures product as it was at a specific day.
     """
     try:
-        results = polygon_client.get_futures_product_details(
+        results = massive_client.get_futures_product_details(
             product_code=product_code,
             type=type,
             as_of=as_of,
@@ -1798,7 +1780,7 @@ async def list_futures_quotes(
     Get quotes for a futures contract in a given time range.
     """
     try:
-        results = polygon_client.list_futures_quotes(
+        results = massive_client.list_futures_quotes(
             ticker=ticker,
             timestamp=timestamp,
             timestamp_lt=timestamp_lt,
@@ -1842,7 +1824,7 @@ async def list_futures_trades(
     Get trades for a futures contract in a given time range.
     """
     try:
-        results = polygon_client.list_futures_trades(
+        results = massive_client.list_futures_trades(
             ticker=ticker,
             timestamp=timestamp,
             timestamp_lt=timestamp_lt,
@@ -1877,7 +1859,7 @@ async def list_futures_schedules(
     Get trading schedules for multiple futures products on a specific date.
     """
     try:
-        results = polygon_client.list_futures_schedules(
+        results = massive_client.list_futures_schedules(
             session_end_date=session_end_date,
             trading_venue=trading_venue,
             limit=limit,
@@ -1907,7 +1889,7 @@ async def list_futures_schedules_by_product_code(
     Get schedule data for a single futures product across many trading dates.
     """
     try:
-        results = polygon_client.list_futures_schedules_by_product_code(
+        results = massive_client.list_futures_schedules_by_product_code(
             product_code=product_code,
             session_end_date=session_end_date,
             session_end_date_lt=session_end_date_lt,
@@ -1937,7 +1919,7 @@ async def list_futures_market_statuses(
     Get market statuses for futures products.
     """
     try:
-        results = polygon_client.list_futures_market_statuses(
+        results = massive_client.list_futures_market_statuses(
             product_code_any_of=product_code_any_of,
             product_code=product_code,
             limit=limit,
@@ -1973,7 +1955,7 @@ async def get_futures_snapshot(
     Get snapshots for futures contracts.
     """
     try:
-        results = polygon_client.get_futures_snapshot(
+        results = massive_client.get_futures_snapshot(
             ticker=ticker,
             ticker_any_of=ticker_any_of,
             ticker_gt=ticker_gt,
