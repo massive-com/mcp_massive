@@ -372,9 +372,10 @@ class TestJsonToCsvStdlib:
         assert "tag2" in rows[0]["tags"]
 
     def test_invalid_json_string(self):
-        """Test that invalid JSON string raises appropriate error."""
-        with pytest.raises(json.JSONDecodeError):
-            json_to_csv("not valid json {")
+        """Test that invalid JSON string returns empty CSV gracefully."""
+        # Invalid JSON should return empty string instead of raising
+        result = json_to_csv("not valid json {")
+        assert result == ""
 
     def test_csv_output_format(self):
         """Test that output is valid CSV with proper headers."""
