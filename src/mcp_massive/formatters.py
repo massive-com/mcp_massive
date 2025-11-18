@@ -18,18 +18,40 @@ def json_to_csv(json_input: str | dict) -> str:
     """
     # Parse JSON if it's a string
     if isinstance(json_input, str):
-        data = json.loads(json_input)
+        try:
+            data = json.loads(json_input)
+        except json.JSONDecodeError:
+            # If JSON parsing fails, return empty CSV
+            return ""
     else:
         data = json_input
 
     if isinstance(data, dict) and "results" in data:
-        records = data["results"]
+        results_value = data["results"]
+        # Handle both list and single object responses
+        if isinstance(results_value, list):
+            records = results_value
+        elif isinstance(results_value, dict):
+            # Single object response (e.g., get_last_trade returns results as object)
+            records = [results_value]
+        else:
+            records = [results_value]
+    elif isinstance(data, dict) and "last" in data:
+        # Handle responses with "last" key (e.g., get_last_trade, get_last_quote)
+        records = [data["last"]] if isinstance(data["last"], dict) else [data]
     elif isinstance(data, list):
         records = data
     else:
         records = [data]
 
-    flattened_records = [_flatten_dict(record) for record in records]
+    # Only flatten dict records, skip non-dict items
+    flattened_records = []
+    for record in records:
+        if isinstance(record, dict):
+            flattened_records.append(_flatten_dict(record))
+        else:
+            # If it's not a dict, wrap it in a dict with a 'value' key
+            flattened_records.append({"value": str(record)})
 
     if not flattened_records:
         return ""
@@ -38,10 +60,11 @@ def json_to_csv(json_input: str | dict) -> str:
     all_keys = []
     seen = set()
     for record in flattened_records:
-        for key in record.keys():
-            if key not in seen:
-                all_keys.append(key)
-                seen.add(key)
+        if isinstance(record, dict):
+            for key in record.keys():
+                if key not in seen:
+                    all_keys.append(key)
+                    seen.add(key)
 
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=all_keys, lineterminator="\n")

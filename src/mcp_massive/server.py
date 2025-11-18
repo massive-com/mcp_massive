@@ -204,14 +204,12 @@ async def list_trades(
 @poly_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def get_last_trade(
     ticker: str,
-    params: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
     Get the most recent trade for a ticker symbol.
     """
     try:
-        results = massive_client.get_last_trade(ticker=ticker, params=params, raw=True)
-
+        results = massive_client.get_last_trade(ticker=ticker, raw=True)
         return json_to_csv(results.data.decode("utf-8"))
     except Exception as e:
         return f"Error: {e}"
