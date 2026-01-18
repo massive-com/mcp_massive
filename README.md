@@ -52,7 +52,7 @@ path to `uvx`.
 
 ```bash
 # Claude CLI
-claude mcp add massive -e MASSIVE_API_KEY=your_api_key_here -- uvx --from git+https://github.com/massive-com/mcp_massive@v0.6.0 mcp_massive
+claude mcp add massive -e MASSIVE_API_KEY=your_api_key_here -- uvx --from git+https://github.com/massive-com/mcp_massive@v0.7.0 mcp_massive
 ```
 
 This command will install the MCP server in your current project.
