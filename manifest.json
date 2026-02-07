@@ -1,39 +1,131 @@
 {
-  "manifest_version": "0.2",
+  "manifest_version": "0.4",
   "name": "mcp_massive",
-  "version": "0.6.0",
+  "display_name": "Massive Market Data",
+  "version": "0.7.0",
   "description": "MCP server providing access to Massive.com financial market data API",
   "author": {
-    "name": "Massive.com",
+    "name": "Massive",
     "email": "support@massive.com",
     "url": "https://massive.com"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/massive-com/mcp_massive.git"
+  },
+  "homepage": "https://massive.com",
+  "support": "https://github.com/massive-com/mcp_massive/issues",
+  "license": "MIT",
   "privacy_policies": [
     "https://massive.com/legal/privacy"
   ],
+  "icon": "assets/icon-massive-lightmode.png",
+  "icons": [
+    {
+      "src": "assets/icon-massive-lightmode.png",
+      "size": "512x512",
+      "theme": "light"
+    },
+    {
+      "src": "assets/icon-massive-darkmode.png",
+      "size": "512x512",
+      "theme": "dark"
+    }
+  ],
+  "keywords": [
+    "finance",
+    "market-data",
+    "stocks",
+    "forex",
+    "crypto",
+    "options",
+    "futures",
+    "trading",
+    "api"
+  ],
   "server": {
-    "type": "python",
-    "entry_point": "mcp_massive",
+    "type": "uv",
+    "entry_point": "entrypoint.py",
     "mcp_config": {
-      "command": "uvx",
-      "args": [
-        "--from",
-        "git+https://github.com/massive-com/mcp_massive",
-        "mcp_massive"
-      ]
+      "command": "uv",
+      "args": ["run", "--directory", "${__dirname}", "mcp_massive"],
+      "env": {
+        "MASSIVE_API_KEY": "${user_config.MASSIVE_API_KEY}"
+      }
     }
   },
   "user_config": {
     "MASSIVE_API_KEY": {
       "type": "string",
+      "title": "Massive API Key",
       "description": "Your Massive.com API key for accessing market data",
       "required": true,
       "sensitive": true
     }
   },
   "compatibility": {
-    "python": ">=3.10"
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
+    "runtimes": {
+      "python": ">=3.10"
+    }
   },
-  "repository": "https://github.com/massive-com/mcp_massive",
-  "license": "MIT"
+  "tools": [
+    { "name": "get_aggs", "description": "List aggregate bars for a ticker over a given date range in custom time window sizes" },
+    { "name": "list_aggs", "description": "Iterate through aggregate bars for a ticker over a given date range" },
+    { "name": "get_grouped_daily_aggs", "description": "Get grouped daily bars for entire market for a specific date" },
+    { "name": "get_daily_open_close_agg", "description": "Get daily open, close, high, and low for a specific ticker and date" },
+    { "name": "get_previous_close_agg", "description": "Get previous day's open, close, high, and low for a specific ticker" },
+    { "name": "list_trades", "description": "Get trades for a ticker symbol" },
+    { "name": "get_last_trade", "description": "Get the most recent trade for a ticker symbol" },
+    { "name": "get_last_crypto_trade", "description": "Get the most recent trade for a crypto pair" },
+    { "name": "list_quotes", "description": "Get quotes for a ticker symbol" },
+    { "name": "get_last_quote", "description": "Get the most recent quote for a ticker symbol" },
+    { "name": "get_last_forex_quote", "description": "Get the most recent forex quote" },
+    { "name": "get_real_time_currency_conversion", "description": "Get real-time currency conversion" },
+    { "name": "list_universal_snapshots", "description": "Get universal snapshots for multiple assets of a specific type" },
+    { "name": "get_snapshot_all", "description": "Get a snapshot of all tickers in a market" },
+    { "name": "get_snapshot_direction", "description": "Get gainers or losers for a market" },
+    { "name": "get_snapshot_ticker", "description": "Get snapshot for a specific ticker" },
+    { "name": "get_snapshot_option", "description": "Get snapshot for a specific option contract" },
+    { "name": "get_snapshot_crypto_book", "description": "Get snapshot for a crypto ticker's order book" },
+    { "name": "get_market_holidays", "description": "Get upcoming market holidays and their open/close times" },
+    { "name": "get_market_status", "description": "Get current trading status of exchanges and financial markets" },
+    { "name": "list_tickers", "description": "Query supported ticker symbols across stocks, indices, forex, and crypto" },
+    { "name": "get_ticker_details", "description": "Get detailed information about a specific ticker" },
+    { "name": "list_ticker_news", "description": "Get recent news articles for a stock ticker" },
+    { "name": "get_ticker_types", "description": "List all ticker types supported by Massive.com" },
+    { "name": "list_splits", "description": "Get historical stock splits" },
+    { "name": "list_dividends", "description": "Get historical cash dividends" },
+    { "name": "list_conditions", "description": "List conditions used by Massive.com" },
+    { "name": "get_exchanges", "description": "List exchanges known by Massive.com" },
+    { "name": "list_stock_financials", "description": "Get fundamental financial data for companies" },
+    { "name": "list_ipos", "description": "Retrieve upcoming or historical IPOs" },
+    { "name": "list_short_interest", "description": "Retrieve short interest data for stocks" },
+    { "name": "list_short_volume", "description": "Retrieve short volume data for stocks" },
+    { "name": "list_treasury_yields", "description": "Retrieve treasury yield data" },
+    { "name": "list_inflation", "description": "Get inflation data from the Federal Reserve" },
+    { "name": "list_benzinga_analyst_insights", "description": "List Benzinga analyst insights" },
+    { "name": "list_benzinga_analysts", "description": "List Benzinga analysts" },
+    { "name": "list_benzinga_consensus_ratings", "description": "List Benzinga consensus ratings for a ticker" },
+    { "name": "list_benzinga_earnings", "description": "List Benzinga earnings" },
+    { "name": "list_benzinga_firms", "description": "List Benzinga firms" },
+    { "name": "list_benzinga_guidance", "description": "List Benzinga guidance" },
+    { "name": "list_benzinga_news", "description": "Retrieve real-time structured news articles from Benzinga" },
+    { "name": "list_benzinga_ratings", "description": "List Benzinga ratings" },
+    { "name": "list_futures_aggregates", "description": "Get aggregates for a futures contract in a given time range" },
+    { "name": "list_futures_contracts", "description": "Get a paginated list of futures contracts" },
+    { "name": "get_futures_contract_details", "description": "Get details for a single futures contract at a specified point in time" },
+    { "name": "list_futures_products", "description": "Get a list of futures products including combos" },
+    { "name": "get_futures_product_details", "description": "Get details for a single futures product as it was at a specific day" },
+    { "name": "list_futures_quotes", "description": "Get quotes for a futures contract in a given time range" },
+    { "name": "list_futures_trades", "description": "Get trades for a futures contract in a given time range" },
+    { "name": "list_futures_schedules", "description": "Get trading schedules for multiple futures products on a specific date" },
+    { "name": "list_futures_schedules_by_product_code", "description": "Get schedule data for a single futures product across many trading dates" },
+    { "name": "list_futures_market_statuses", "description": "Get market statuses for futures products" },
+    { "name": "get_futures_snapshot", "description": "Get snapshots for futures contracts" }
+  ]
 }
