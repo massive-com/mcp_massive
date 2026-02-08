@@ -2,9 +2,41 @@ import json
 import csv
 import io
 
-import pytest
+from mcp_massive.formatters import json_to_csv, _flatten_dict, strip_response_metadata
 
-from mcp_massive.formatters import json_to_csv, _flatten_dict
+
+class TestStripResponseMetadata:
+    """Tests for the strip_response_metadata helper function."""
+
+    def test_removes_specified_keys(self):
+        json_text = '{"request_id": "abc", "status": "OK", "results": [{"t": 1}]}'
+        result = strip_response_metadata(json_text, {"request_id", "status"})
+        data = json.loads(result)
+        assert "request_id" not in data
+        assert "status" not in data
+        assert "results" in data
+
+    def test_preserves_data_keys(self):
+        json_text = (
+            '{"results": [{"ticker": "AAPL"}], "count": 1, "next_url": "http://x"}'
+        )
+        result = strip_response_metadata(json_text, {"count", "next_url"})
+        data = json.loads(result)
+        assert "results" in data
+        assert "count" not in data
+        assert "next_url" not in data
+
+    def test_handles_missing_keys(self):
+        json_text = '{"results": [{"t": 1}]}'
+        result = strip_response_metadata(json_text, {"request_id", "status"})
+        data = json.loads(result)
+        assert "results" in data
+
+    def test_handles_non_dict(self):
+        json_text = "[1, 2, 3]"
+        result = strip_response_metadata(json_text, {"key"})
+        data = json.loads(result)
+        assert data == [1, 2, 3]
 
 
 class TestFlattenDict:

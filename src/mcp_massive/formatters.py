@@ -4,6 +4,18 @@ import io
 from typing import Any
 
 
+def strip_response_metadata(json_text: str, exclude_keys: set) -> str:
+    """Strip metadata keys from a JSON response string.
+
+    Parses the JSON, removes top-level keys in exclude_keys, and re-serializes.
+    """
+    data = json.loads(json_text)
+    if isinstance(data, dict):
+        for key in exclude_keys:
+            data.pop(key, None)
+    return json.dumps(data)
+
+
 def json_to_csv(json_input: str | dict) -> str:
     """
     Convert JSON to flattened CSV format.
