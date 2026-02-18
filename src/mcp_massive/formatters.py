@@ -4,7 +4,63 @@ import io
 from typing import Any
 
 
-def json_to_csv(json_input: str | dict) -> str:
+def strip_response_metadata(json_text: str, exclude_keys: set) -> str:
+    """Strip metadata keys from a JSON response string.
+
+    Parses the JSON, removes top-level keys in exclude_keys, and re-serializes.
+    """
+    data = json.loads(json_text)
+    if isinstance(data, dict):
+        for key in exclude_keys:
+            data.pop(key, None)
+    return json.dumps(data)
+
+
+def extract_records(data: str | dict | list) -> list[dict]:
+    """Extract and flatten records from raw JSON input.
+
+    Takes raw JSON input (string or parsed), extracts the records list
+    (handling 'results', 'last', list, and single-object cases), flattens
+    each record via _flatten_dict, and returns a list of flat dicts.
+
+    Args:
+        data: JSON string, dict, or list.
+
+    Returns:
+        List of flattened dictionaries.
+    """
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except json.JSONDecodeError:
+            return []
+
+    if isinstance(data, dict) and "results" in data:
+        results_value = data["results"]
+        if isinstance(results_value, list):
+            records = results_value
+        elif isinstance(results_value, dict):
+            records = [results_value]
+        else:
+            records = [results_value]
+    elif isinstance(data, dict) and "last" in data:
+        records = [data["last"]] if isinstance(data["last"], dict) else [data]
+    elif isinstance(data, list):
+        records = data
+    else:
+        records = [data]
+
+    flattened_records = []
+    for record in records:
+        if isinstance(record, dict):
+            flattened_records.append(_flatten_dict(record))
+        else:
+            flattened_records.append({"value": str(record)})
+
+    return flattened_records
+
+
+def json_to_csv(json_input: str | dict | list) -> str:
     """
     Convert JSON to flattened CSV format.
 
@@ -16,42 +72,7 @@ def json_to_csv(json_input: str | dict) -> str:
     Returns:
         CSV string with headers and flattened rows
     """
-    # Parse JSON if it's a string
-    if isinstance(json_input, str):
-        try:
-            data = json.loads(json_input)
-        except json.JSONDecodeError:
-            # If JSON parsing fails, return empty CSV
-            return ""
-    else:
-        data = json_input
-
-    if isinstance(data, dict) and "results" in data:
-        results_value = data["results"]
-        # Handle both list and single object responses
-        if isinstance(results_value, list):
-            records = results_value
-        elif isinstance(results_value, dict):
-            # Single object response (e.g., get_last_trade returns results as object)
-            records = [results_value]
-        else:
-            records = [results_value]
-    elif isinstance(data, dict) and "last" in data:
-        # Handle responses with "last" key (e.g., get_last_trade, get_last_quote)
-        records = [data["last"]] if isinstance(data["last"], dict) else [data]
-    elif isinstance(data, list):
-        records = data
-    else:
-        records = [data]
-
-    # Only flatten dict records, skip non-dict items
-    flattened_records = []
-    for record in records:
-        if isinstance(record, dict):
-            flattened_records.append(_flatten_dict(record))
-        else:
-            # If it's not a dict, wrap it in a dict with a 'value' key
-            flattened_records.append({"value": str(record)})
+    flattened_records = extract_records(json_input)
 
     if not flattened_records:
         return ""
