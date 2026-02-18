@@ -5,15 +5,14 @@ description = "A MCP server project"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "mcp[cli]>=1.15.0",
-    "massive>=2.0.1",
+    "mcp>=1.15.0",
     "httpx>=0.28.0",
-    "bm25s>=0.2.0",
-    "PyStemmer>=2.2.0",
-    "python-dotenv>=1.2.0",
-    "scipy>=1.10.0",
     "numpy>=1.24.0",
+    "bm25s>=0.2.0",
+    "snowballstemmer>=2.2.0",
+    "python-dotenv>=1.2.0",
     "pydantic>=2.0.0",
+    "sqlglot>=26.0.0",
 ]
 [[project.authors]]
 name = "Massive"

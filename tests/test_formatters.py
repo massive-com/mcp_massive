@@ -8,6 +8,7 @@ from mcp_massive.formatters import (
     _flatten_dict,
     strip_response_metadata,
 )
+from mcp_massive.server import METADATA_KEYS
 
 
 class TestStripResponseMetadata:
@@ -30,6 +31,34 @@ class TestStripResponseMetadata:
         assert "results" in data
         assert "count" not in data
         assert "next_url" in data  # next_url is preserved for pagination
+
+    def test_next_url_preserved_after_metadata_strip(self):
+        """Verify next_url is preserved through metadata stripping for pagination.
+
+        METADATA_KEYS strips request_id, status, etc. but NOT next_url.
+        The call_api function extracts next_url separately to produce a
+        pagination hint for the LLM.
+        """
+        response = json.dumps(
+            {
+                "results": [
+                    {"t": 1704067200000, "c": 185.56, "h": 186.10, "l": 183.82},
+                    {"t": 1704153600000, "c": 185.01, "h": 186.74, "l": 184.35},
+                ],
+                "next_url": "https://api.massive.com/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31?cursor=abc123",
+                "request_id": "req-001",
+                "resultsCount": 2,
+                "status": "OK",
+            }
+        )
+        stripped = strip_response_metadata(response, METADATA_KEYS)
+        parsed = json.loads(stripped)
+        assert "next_url" in parsed  # preserved for pagination
+        assert "request_id" not in parsed
+        assert "resultsCount" not in parsed
+        assert "status" not in parsed
+        assert len(parsed["results"]) == 2
+        assert parsed["results"][0]["c"] == 185.56
 
     def test_handles_missing_keys(self):
         json_text = '{"results": [{"t": 1}]}'

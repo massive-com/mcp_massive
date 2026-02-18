@@ -6,6 +6,8 @@ import sqlite3
 import time
 from typing import Any, cast
 
+import sqlglot
+from sqlglot import exp
 from pydantic import BaseModel, Field
 
 TABLE_NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]{0,62}$")
@@ -22,16 +24,121 @@ _RESERVED_TABLE_NAMES: frozenset[str] = frozenset(
     }
 )
 
-# Statement keywords that are never allowed (word-boundary match).
-_DANGEROUS_KEYWORDS_RE = re.compile(
-    r"\b(ATTACH|DETACH|PRAGMA|CREATE|INSERT|UPDATE|DELETE|DROP|ALTER|COPY|SET|INSTALL|LOAD|CALL)\b",
-    re.IGNORECASE,
+# Name-based denylist of dangerous SQLite functions.  These are real SQLite
+# functions (or loadable-extension functions) that could escape the sandbox.
+# Note: unrecognised functions are already blocked via the Anonymous node
+# catch-all in _validate_sql, so we only need to list functions that sqlglot
+# might give a typed Func subclass.
+_BLOCKED_FUNC_NAMES: frozenset[str] = frozenset(
+    {
+        "load_extension",  # loads arbitrary shared libraries
+        "readfile",  # fileio extension: reads files from disk
+        "writefile",  # fileio extension: writes files to disk
+        "edit",  # fileio extension: opens editor on file
+        "fts3_tokenizer",  # can be abused to call arbitrary C functions
+    }
 )
 
 DEFAULT_MAX_TABLES = 50
 DEFAULT_MAX_ROWS = 50_000
 TTL_SECONDS = 3600
 QUERY_TIMEOUT_SECONDS = 30
+
+# Functions allowed through the SQLite authorizer.  This must include every
+# custom function registered via _register_custom_functions as well as safe
+# SQLite built-ins that queries may use.
+_AUTHORIZER_ALLOWED_FUNCTIONS: frozenset[str] = frozenset(
+    {
+        # Custom registered functions
+        "sqrt",
+        "ln",
+        "exp",
+        "power",
+        "concat",
+        "stddev",
+        "stddev_samp",
+        # Standard SQLite aggregates / scalars
+        "count",
+        "sum",
+        "avg",
+        "min",
+        "max",
+        "total",
+        "group_concat",
+        "coalesce",
+        "nullif",
+        "ifnull",
+        "iif",
+        "abs",
+        "round",
+        "typeof",
+        "unicode",
+        "zeroblob",
+        "lower",
+        "upper",
+        "length",
+        "substr",
+        "substring",
+        "trim",
+        "ltrim",
+        "rtrim",
+        "replace",
+        "instr",
+        "hex",
+        "quote",
+        "char",
+        "printf",
+        "format",
+        "like",
+        "glob",
+        "date",
+        "time",
+        "datetime",
+        "julianday",
+        "strftime",
+        "unixepoch",
+        "timediff",
+        "cast",
+        # Window functions
+        "row_number",
+        "rank",
+        "dense_rank",
+        "ntile",
+        "lag",
+        "lead",
+        "first_value",
+        "last_value",
+        "nth_value",
+        # NULL / type checking
+        "likelihood",
+        "likely",
+        "unlikely",
+        # CASE is not a function but some drivers report it
+        "case",
+    }
+)
+
+
+def _select_only_authorizer(
+    action: int,
+    arg1: str | None,
+    arg2: str | None,
+    dbname: str | None,
+    source: str | None,
+) -> int:
+    """SQLite authorizer callback that only permits SELECT reads.
+
+    Installed after table population so CREATE/INSERT for setup are
+    unaffected.  Blocks INSERT, UPDATE, DELETE, CREATE, DROP, ATTACH,
+    PRAGMA, and any function not in the allowlist.
+    """
+    if action in (sqlite3.SQLITE_SELECT, sqlite3.SQLITE_READ):
+        return sqlite3.SQLITE_OK
+    if action == sqlite3.SQLITE_FUNCTION:
+        if arg2 is not None and arg2.lower() in _AUTHORIZER_ALLOWED_FUNCTIONS:
+            return sqlite3.SQLITE_OK
+        return sqlite3.SQLITE_DENY
+    return sqlite3.SQLITE_DENY
 
 
 class Table:
@@ -257,23 +364,6 @@ def _preprocess_sql(sql: str) -> str:
         flags=re.IGNORECASE,
     )
     return sql
-
-
-def _strip_string_literals(sql: str) -> str:
-    """Replace string literals with empty strings for safe keyword scanning."""
-    result = []
-    i = 0
-    while i < len(sql):
-        if sql[i] == "'":
-            result.append("''")
-            i += 1
-            while i < len(sql) and sql[i] != "'":
-                i += 1
-            i += 1  # skip closing quote
-        else:
-            result.append(sql[i])
-            i += 1
-    return "".join(result)
 
 
 def _infer_dtype_label(values: list) -> str:
@@ -521,49 +611,91 @@ class DataFrameStore:
 
     @staticmethod
     def _validate_sql(sql: str, allowed_tables: set[str]) -> str:
-        """Validate that *sql* is a read-only SELECT query.
+        """Validate that *sql* is a read-only SELECT over registered tables.
 
-        Performs lightweight validation:
-        1. Non-empty, strip trailing semicolons.
-        2. First keyword is SELECT or WITH.
-        3. No dangerous statement keywords (ATTACH, PRAGMA, CREATE, etc.).
+        Uses sqlglot to parse the SQL into an AST and structurally verify:
 
-        Table validation is handled by SQLite itself — it raises
-        "no such table" for unregistered tables.
+        1. It is a single SELECT / UNION / EXCEPT / INTERSECT statement.
+        2. It contains no blocked functions (filesystem I/O, etc.).
+        3. Every table reference resolves to either a CTE defined in the
+           query or one of the *allowed_tables*.
 
         Args:
             sql: Raw SQL string.
-            allowed_tables: Set of table names (unused in keyword validation
-                but kept for API compatibility).
+            allowed_tables: Set of table names the query is permitted to
+                reference (i.e. the keys of ``self._tables``).
 
         Returns:
             The cleaned SQL string.
 
         Raises:
-            ValueError: If the query fails any check.
+            ValueError: If the query fails any of the above checks.
         """
         stripped = sql.strip().rstrip(";").strip()
         if not stripped:
             raise ValueError("Empty SQL query.")
 
-        # Check first keyword
-        first_word = stripped.split()[0].upper()
-        if first_word not in ("SELECT", "WITH"):
+        try:
+            statements = sqlglot.parse(stripped, dialect="sqlite")
+        except sqlglot.errors.ParseError as exc:
+            raise ValueError(f"SQL parse error: {exc}") from exc
+
+        # Filter out None entries that sqlglot may return for trailing
+        # semicolons / empty segments.
+        statements = [s for s in statements if s is not None]
+
+        if len(statements) != 1:
             raise ValueError(
-                f"Only SELECT queries are allowed. Got statement starting with: {first_word}"
+                f"Exactly one SQL statement is allowed, got {len(statements)}."
             )
 
-        # Check for dangerous keywords (scan the SQL with string literals removed)
-        safe_sql = _strip_string_literals(stripped)
-        match = _DANGEROUS_KEYWORDS_RE.search(safe_sql)
-        if match:
+        stmt = statements[0]
+
+        # Must be a read-only query.  exp.Query covers Select (including
+        # WITH ... SELECT) and set operations (Union, Except, Intersect).
+        if not isinstance(stmt, exp.Query):
             raise ValueError(
-                f"Only SELECT queries are allowed. Got: {match.group(0).upper()}"
+                f"Only SELECT queries are allowed. Got: {type(stmt).__name__}"
             )
 
-        # Reject multiple statements (semicolons outside string literals)
-        if ";" in safe_sql:
-            raise ValueError("Exactly one SQL statement is allowed, got multiple.")
+        # ---- Function denylist -------------------------------------------
+        for node in stmt.find_all(exp.Func):
+            if isinstance(node, (exp.Anonymous, exp.AnonymousAggFunc)):
+                # Anonymous nodes are functions sqlglot doesn't recognise —
+                # block them since they may be dangerous extensions.
+                raise ValueError(f"Function not allowed: {node.name}")
+            # Safety net: check SQL name against the explicit denylist
+            # even if sqlglot gives them a typed Func subclass.
+            try:
+                sql_name = type(node).sql_name().lower()
+            except (NotImplementedError, AttributeError):
+                continue
+            if sql_name in _BLOCKED_FUNC_NAMES:
+                raise ValueError(f"Function not allowed: {sql_name}")
+
+        # ---- Table reference allowlist -----------------------------------
+        # Collect CTE names defined within the query itself; these are valid
+        # table references that do not need to exist in _tables.
+        cte_names = {cte.alias for cte in stmt.find_all(exp.CTE)}
+
+        for table_node in stmt.find_all(exp.Table):
+            name = table_node.name
+            # Table-valued functions produce Table nodes with an empty name;
+            # skip those — the function check above already handles them.
+            if not name:
+                continue
+            # Qualified references like schema.table must be rejected —
+            # they are never registered user tables.
+            if table_node.db or table_node.catalog:
+                raise ValueError(
+                    f"Schema-qualified table references are not allowed: "
+                    f"{table_node.sql(dialect='sqlite')}"
+                )
+            if name not in allowed_tables and name not in cte_names:
+                raise ValueError(
+                    f"Table not found: '{name}'. "
+                    f"Available tables: {sorted(allowed_tables) or '(none)'}"
+                )
 
         return stripped
 
@@ -586,11 +718,37 @@ class DataFrameStore:
 
         conn = sqlite3.connect(":memory:")
         try:
+            # ---- Phase 1: setup (needs write access) ----
             conn.execute("PRAGMA trusted_schema = OFF")
+            conn.execute("PRAGMA cell_size_check = ON")
             _register_custom_functions(conn)
 
             for name, (table, _ts) in self._tables.items():
                 _create_and_populate_table(conn, name, table)
+
+            # ---- Phase 2: lock down before running user SQL ----
+            conn.execute("PRAGMA query_only = ON")
+
+            # Disable extension loading (no-op if already compiled out)
+            if hasattr(conn, "enable_load_extension"):
+                conn.enable_load_extension(False)
+
+            # Python 3.12+ setconfig for additional hardening
+            _setconfig = getattr(conn, "setconfig", None)
+            if _setconfig is not None:
+                for attr, val in (
+                    ("SQLITE_DBCONFIG_DEFENSIVE", True),
+                    ("SQLITE_DBCONFIG_ENABLE_LOAD_EXTENSION", False),
+                    ("SQLITE_DBCONFIG_ENABLE_TRIGGER", False),
+                    ("SQLITE_DBCONFIG_ENABLE_VIEW", False),
+                    ("SQLITE_DBCONFIG_TRUSTED_SCHEMA", False),
+                ):
+                    flag = getattr(sqlite3, attr, None)
+                    if flag is not None:
+                        _setconfig(flag, val)
+
+            # Authorizer: allowlist of permitted operations and functions
+            conn.set_authorizer(_select_only_authorizer)
 
             # Timeout via progress handler
             deadline = time.monotonic() + QUERY_TIMEOUT_SECONDS
@@ -604,12 +762,14 @@ class DataFrameStore:
 
             try:
                 cursor = conn.execute(preprocessed)
-            except sqlite3.OperationalError as exc:
+            except sqlite3.DatabaseError as exc:
                 msg = str(exc)
                 if "interrupted" in msg.lower():
                     raise TimeoutError(
                         f"Query exceeded {QUERY_TIMEOUT_SECONDS}s timeout."
                     ) from None
+                if "not authorized" in msg.lower() or "authorization" in msg.lower():
+                    raise ValueError(f"Query blocked by authorizer: {msg}") from exc
                 # Convert "no such table" to a helpful message
                 if "no such table" in msg:
                     raise ValueError(

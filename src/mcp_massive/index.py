@@ -8,14 +8,14 @@ import httpx
 import numpy as np
 import bm25s
 from pydantic import BaseModel, Field
-import Stemmer as snowball_stemmer  # type: ignore[import-untyped]
+import snowballstemmer
 from bm25s.stopwords import STOPWORDS_EN
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_LLMS_TXT_URL = "https://massive.com/docs/rest/llms.txt"
 
-_snowball = snowball_stemmer.Stemmer("english")
+_snowball = snowballstemmer.stemmer("english")
 _STOPWORDS = frozenset(STOPWORDS_EN)
 
 

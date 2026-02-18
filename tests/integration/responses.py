@@ -1,0 +1,321 @@
+"""Canned JSON responses matching real Massive.com API shapes."""
+
+STOCK_AGGS_RESPONSE = {
+    "ticker": "AAPL",
+    "queryCount": 5,
+    "resultsCount": 5,
+    "adjusted": True,
+    "results": [
+        {
+            "v": 7.09e7,
+            "vw": 171.6432,
+            "o": 170.57,
+            "c": 172.28,
+            "h": 172.94,
+            "l": 170.27,
+            "t": 1704067200000,
+            "n": 911034,
+        },
+        {
+            "v": 4.95e7,
+            "vw": 181.5012,
+            "o": 181.06,
+            "c": 181.91,
+            "h": 182.34,
+            "l": 180.17,
+            "t": 1704153600000,
+            "n": 645123,
+        },
+        {
+            "v": 4.61e7,
+            "vw": 184.0705,
+            "o": 183.92,
+            "c": 184.25,
+            "h": 185.15,
+            "l": 183.43,
+            "t": 1704240000000,
+            "n": 580420,
+        },
+        {
+            "v": 5.51e7,
+            "vw": 185.2311,
+            "o": 184.22,
+            "c": 185.56,
+            "h": 186.10,
+            "l": 183.82,
+            "t": 1704326400000,
+            "n": 713987,
+        },
+        {
+            "v": 6.23e7,
+            "vw": 184.8800,
+            "o": 186.09,
+            "c": 185.01,
+            "h": 186.74,
+            "l": 184.35,
+            "t": 1704412800000,
+            "n": 827311,
+        },
+    ],
+    "status": "OK",
+    "request_id": "abc123",
+    "count": 5,
+}
+
+TRADES_RESPONSE = {
+    "results": [
+        {
+            "conditions": [12, 37],
+            "exchange": 4,
+            "id": "1",
+            "participant_timestamp": 1704067200000000000,
+            "price": 172.30,
+            "sequence_number": 100,
+            "sip_timestamp": 1704067200001000000,
+            "size": 50,
+            "tape": 3,
+        },
+        {
+            "conditions": [12],
+            "exchange": 11,
+            "id": "2",
+            "participant_timestamp": 1704067200100000000,
+            "price": 172.32,
+            "sequence_number": 101,
+            "sip_timestamp": 1704067200101000000,
+            "size": 100,
+            "tape": 3,
+        },
+    ],
+    "status": "OK",
+    "request_id": "def456",
+}
+
+QUOTES_RESPONSE = {
+    "results": [
+        {
+            "ask_exchange": 11,
+            "ask_price": 172.35,
+            "ask_size": 2,
+            "bid_exchange": 4,
+            "bid_price": 172.30,
+            "bid_size": 3,
+            "participant_timestamp": 1704067200000000000,
+            "sequence_number": 200,
+            "sip_timestamp": 1704067200001000000,
+            "tape": 3,
+        }
+    ],
+    "status": "OK",
+    "request_id": "ghi789",
+}
+
+OPTIONS_CHAIN_RESPONSE = {
+    "results": [
+        {
+            "break_even_price": 177.50,
+            "day": {
+                "change": 0.45,
+                "change_percent": 5.2,
+                "close": 9.10,
+                "high": 9.50,
+                "last_updated": 1704412800000000000,
+                "low": 8.60,
+                "open": 8.80,
+                "previous_close": 8.65,
+                "volume": 1234,
+                "vwap": 9.05,
+            },
+            "details": {
+                "contract_type": "call",
+                "exercise_style": "american",
+                "expiration_date": "2024-01-19",
+                "shares_per_contract": 100,
+                "strike_price": 170.00,
+                "ticker": "O:AAPL240119C00170000",
+            },
+            "greeks": {"delta": 0.65, "gamma": 0.03, "theta": -0.12, "vega": 0.25},
+            "implied_volatility": 0.28,
+            "open_interest": 5678,
+            "underlying_asset": {
+                "change_to_break_even": 5.22,
+                "last_updated": 1704412800000000000,
+                "price": 172.28,
+                "ticker": "AAPL",
+                "timeframe": "DELAYED",
+            },
+        }
+    ],
+    "status": "OK",
+    "request_id": "opt001",
+}
+
+CRYPTO_AGGS_RESPONSE = {
+    "ticker": "X:BTCUSD",
+    "queryCount": 3,
+    "resultsCount": 3,
+    "adjusted": True,
+    "results": [
+        {
+            "v": 18234.5,
+            "vw": 42150.23,
+            "o": 41900.00,
+            "c": 42300.00,
+            "h": 42500.00,
+            "l": 41800.00,
+            "t": 1704067200000,
+            "n": 45123,
+        },
+        {
+            "v": 21045.8,
+            "vw": 42500.67,
+            "o": 42300.00,
+            "c": 42800.00,
+            "h": 43000.00,
+            "l": 42100.00,
+            "t": 1704153600000,
+            "n": 52341,
+        },
+        {
+            "v": 16789.2,
+            "vw": 42900.45,
+            "o": 42800.00,
+            "c": 43100.00,
+            "h": 43300.00,
+            "l": 42600.00,
+            "t": 1704240000000,
+            "n": 39876,
+        },
+    ],
+    "status": "OK",
+    "request_id": "crypto001",
+    "count": 3,
+}
+
+FOREX_AGGS_RESPONSE = {
+    "ticker": "C:EURUSD",
+    "queryCount": 3,
+    "resultsCount": 3,
+    "adjusted": True,
+    "results": [
+        {
+            "v": 52341.0,
+            "vw": 1.1025,
+            "o": 1.1010,
+            "c": 1.1040,
+            "h": 1.1055,
+            "l": 1.0995,
+            "t": 1704067200000,
+            "n": 12345,
+        },
+        {
+            "v": 48923.0,
+            "vw": 1.1060,
+            "o": 1.1040,
+            "c": 1.1080,
+            "h": 1.1095,
+            "l": 1.1020,
+            "t": 1704153600000,
+            "n": 11234,
+        },
+        {
+            "v": 55012.0,
+            "vw": 1.1045,
+            "o": 1.1080,
+            "c": 1.1030,
+            "h": 1.1100,
+            "l": 1.1010,
+            "t": 1704240000000,
+            "n": 13456,
+        },
+    ],
+    "status": "OK",
+    "request_id": "forex001",
+    "count": 3,
+}
+
+TICKERS_RESPONSE = {
+    "results": [
+        {
+            "ticker": "AAPL",
+            "name": "Apple Inc.",
+            "market": "stocks",
+            "locale": "us",
+            "primary_exchange": "XNAS",
+            "type": "CS",
+            "active": True,
+            "currency_name": "usd",
+            "last_updated_utc": "2024-01-05",
+        },
+        {
+            "ticker": "GOOGL",
+            "name": "Alphabet Inc.",
+            "market": "stocks",
+            "locale": "us",
+            "primary_exchange": "XNAS",
+            "type": "CS",
+            "active": True,
+            "currency_name": "usd",
+            "last_updated_utc": "2024-01-05",
+        },
+    ],
+    "status": "OK",
+    "request_id": "ref001",
+    "count": 2,
+}
+
+SNAPSHOT_RESPONSE = {
+    "ticker": {
+        "ticker": "AAPL",
+        "todaysChangePerc": 1.25,
+        "todaysChange": 2.15,
+        "updated": 1704412800000000000,
+        "day": {
+            "o": 184.22,
+            "h": 186.74,
+            "l": 184.35,
+            "c": 185.01,
+            "v": 62300000,
+            "vw": 184.88,
+        },
+        "lastTrade": {"p": 185.01, "s": 100, "t": 1704412799000000000, "x": 4},
+        "lastQuote": {
+            "P": 185.02,
+            "S": 2,
+            "p": 185.00,
+            "s": 3,
+            "t": 1704412799500000000,
+        },
+        "min": {
+            "av": 62300000,
+            "o": 185.00,
+            "h": 185.05,
+            "l": 184.98,
+            "c": 185.01,
+            "v": 12345,
+            "vw": 185.01,
+        },
+        "prevDay": {
+            "o": 183.92,
+            "h": 185.15,
+            "l": 183.43,
+            "c": 184.25,
+            "v": 46100000,
+            "vw": 184.07,
+        },
+    },
+    "status": "OK",
+    "request_id": "snap001",
+}
+
+LAST_TRADE_RESPONSE = {
+    "last": {
+        "price": 185.01,
+        "size": 100,
+        "exchange": 4,
+        "conditions": [12, 37],
+        "timestamp": 1704412799000000000,
+    },
+    "status": "OK",
+    "request_id": "last001",
+}

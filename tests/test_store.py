@@ -2276,6 +2276,248 @@ class TestSQLSecurityValidation:
         assert df["cnt"][0] == 2
         assert df["total"][0] == 3
 
+    # ---- Schema-qualified table references ----
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT * FROM main.sqlite_master",
+            "SELECT * FROM main.t",
+            "SELECT * FROM temp.sqlite_master",
+            "SELECT sql FROM pragma_table_info('t')",
+        ],
+    )
+    def test_schema_qualified_references_blocked(self, sql):
+        """Schema-qualified refs (main.X, temp.X) must be rejected."""
+        s = self._store_with_data()
+        with pytest.raises((ValueError, Exception)):
+            s.query(sql)
+
+    # ---- System table access via subqueries / UNION ----
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT * FROM (SELECT * FROM sqlite_master)",
+            "SELECT x FROM t UNION SELECT sql FROM sqlite_master",
+            "SELECT x FROM t UNION ALL SELECT name FROM sqlite_master",
+            "SELECT x FROM t WHERE x IN (SELECT rowid FROM sqlite_master)",
+        ],
+    )
+    def test_system_table_access_via_subquery_or_union(self, sql):
+        """sqlite_master must be blocked even inside subqueries and UNIONs."""
+        s = self._store_with_data()
+        with pytest.raises((ValueError, Exception)):
+            s.query(sql)
+
+    # ---- SQLite-specific dangerous functions ----
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT load_extension('/tmp/evil.so')",
+            "SELECT load_extension('/tmp/evil.so', 'entry')",
+            "SELECT readfile('/etc/passwd')",
+            "SELECT writefile('/tmp/pwned', 'data')",
+            "SELECT fts3_tokenizer('simple')",
+        ],
+    )
+    def test_sqlite_dangerous_functions_blocked(self, sql):
+        """SQLite extension functions that could escape the sandbox must be blocked."""
+        s = self._store_with_data()
+        with pytest.raises((ValueError, Exception)):
+            s.query(sql)
+
+    # ---- Anonymous / unrecognised function catch-all ----
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT some_unknown_func(x) FROM t",
+            "SELECT my_custom_udf(1, 2, 3)",
+        ],
+    )
+    def test_anonymous_functions_blocked(self, sql):
+        """Unrecognised function names must be rejected by the catch-all."""
+        s = self._store_with_data()
+        with pytest.raises((ValueError, Exception)):
+            s.query(sql)
+
+    # ---- False-positive avoidance ----
+
+    def test_keywords_in_string_literals_not_blocked(self):
+        """SQL keywords inside string literals must not trigger rejection."""
+        s = self._store_with_data()
+        df = s.query_df("SELECT 'DROP TABLE t; DELETE FROM t' AS val FROM t")
+        assert df["val"][0] == "DROP TABLE t; DELETE FROM t"
+
+    def test_keywords_in_column_aliases_not_blocked(self):
+        """Column aliases that look like keywords must not trigger rejection."""
+        s = self._store_with_data()
+        df = s.query_df("SELECT x AS delete_count FROM t")
+        assert df["delete_count"] == [1, 2]
+
+    # ---- Subquery table references in various positions ----
+
+    def test_unregistered_table_in_subquery_blocked(self):
+        """Unregistered tables inside subqueries must be caught."""
+        s = self._store_with_data()
+        with pytest.raises((ValueError, Exception)):
+            s.query("SELECT * FROM (SELECT * FROM secret_table)")
+
+    def test_unregistered_table_in_where_subquery_blocked(self):
+        """Unregistered tables in WHERE subqueries must be caught."""
+        s = self._store_with_data()
+        with pytest.raises((ValueError, Exception)):
+            s.query("SELECT * FROM t WHERE x IN (SELECT y FROM secret_table)")
+
+    def test_unregistered_table_in_join_blocked(self):
+        """Unregistered tables in JOINs must be caught."""
+        s = self._store_with_data()
+        with pytest.raises((ValueError, Exception)):
+            s.query("SELECT * FROM t JOIN secret_table s ON t.x = s.y")
+
+    # ---- CTE edge cases ----
+
+    def test_cte_cannot_mask_system_table_access(self):
+        """A CTE named after a system table should not allow querying the real system table."""
+        s = self._store_with_data()
+        # The CTE itself references t (allowed), so this should work —
+        # the CTE name 'sqlite_master' just shadows, not accesses, the real one.
+        df = s.query_df(
+            "WITH sqlite_master AS (SELECT x FROM t) SELECT * FROM sqlite_master"
+        )
+        assert df["x"] == [1, 2]
+
+    def test_cte_body_referencing_unregistered_table_blocked(self):
+        """The body of a CTE must also be validated for table references."""
+        s = self._store_with_data()
+        with pytest.raises((ValueError, Exception)):
+            s.query("WITH leaked AS (SELECT * FROM sqlite_master) SELECT * FROM leaked")
+
+    # ---- Multiple statement bypass attempts ----
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT 1; SELECT 2",
+            "SELECT x FROM t; ATTACH ':memory:' AS db2",
+            "SELECT x FROM t;\nDROP TABLE t",
+        ],
+    )
+    def test_multiple_statements_various_forms(self, sql):
+        """Multiple statements in any form must be rejected."""
+        s = self._store_with_data()
+        with pytest.raises((ValueError, Exception)):
+            s.query(sql)
+
+
+class TestSQLiteDefenseInDepth:
+    """Tests that SQLite-level safeguards catch attacks even if sqlglot is bypassed.
+
+    These tests patch _validate_sql to be a no-op, proving that the
+    authorizer, query_only pragma, and connection config provide
+    independent protection.
+    """
+
+    def _store_with_data(self):
+        s = DataFrameStore()
+        s.store("t", [{"x": 1}, {"x": 2}])
+        return s
+
+    def _query_bypassing_sqlglot(self, store, sql):
+        """Run a query with sqlglot validation disabled."""
+        with patch.object(
+            DataFrameStore,
+            "_validate_sql",
+            return_value=sql.strip().rstrip(";").strip(),
+        ):
+            return store.query(sql)
+
+    def _query_df_bypassing_sqlglot(self, store, sql):
+        """Run a query_df with sqlglot validation disabled."""
+        with patch.object(
+            DataFrameStore,
+            "_validate_sql",
+            return_value=sql.strip().rstrip(";").strip(),
+        ):
+            return store.query_df(sql)
+
+    # ---- Authorizer blocks write statements ----
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "INSERT INTO t VALUES (99)",
+            "UPDATE t SET x = 99",
+            "DELETE FROM t",
+            "DROP TABLE t",
+            "CREATE TABLE evil (a TEXT)",
+        ],
+    )
+    def test_authorizer_blocks_writes(self, sql):
+        """Write operations are blocked by the authorizer even without sqlglot."""
+        s = self._store_with_data()
+        with pytest.raises((ValueError, Exception)):
+            self._query_bypassing_sqlglot(s, sql)
+
+    def test_authorizer_blocks_attach(self):
+        """ATTACH is blocked by the authorizer even without sqlglot."""
+        s = self._store_with_data()
+        with pytest.raises((ValueError, Exception)):
+            self._query_bypassing_sqlglot(s, "ATTACH ':memory:' AS other")
+
+    def test_authorizer_blocks_unlisted_function(self):
+        """Functions not in the allowlist are blocked by the authorizer."""
+        s = self._store_with_data()
+        with pytest.raises((ValueError, Exception)):
+            self._query_bypassing_sqlglot(s, "SELECT load_extension('/tmp/evil.so')")
+
+    # ---- query_only pragma blocks writes ----
+
+    def test_query_only_blocks_insert(self):
+        """PRAGMA query_only prevents INSERT even if authorizer were absent."""
+        s = self._store_with_data()
+        with pytest.raises((ValueError, Exception)):
+            self._query_bypassing_sqlglot(s, "INSERT INTO t VALUES (99)")
+
+    # ---- Allowed queries still work with all safeguards active ----
+
+    def test_select_still_works(self):
+        """Normal SELECT queries work with all safeguards active."""
+        s = self._store_with_data()
+        result = self._query_df_bypassing_sqlglot(s, "SELECT x FROM t ORDER BY x")
+        assert result["x"] == [1, 2]
+
+    def test_aggregate_functions_work(self):
+        """Aggregate functions in the allowlist work through the authorizer."""
+        s = self._store_with_data()
+        result = self._query_df_bypassing_sqlglot(
+            s, "SELECT COUNT(*) AS cnt, SUM(x) AS total FROM t"
+        )
+        assert result["cnt"][0] == 2
+        assert result["total"][0] == 3
+
+    def test_custom_functions_work(self):
+        """Custom registered functions (SQRT, etc.) work through the authorizer."""
+        s = self._store_with_data()
+        result = self._query_df_bypassing_sqlglot(
+            s, "SELECT SQRT(x) AS root FROM t WHERE x = 4"
+        )
+        # x=4 doesn't exist; test with existing data
+        result = self._query_df_bypassing_sqlglot(
+            s, "SELECT POWER(x, 2) AS sq FROM t ORDER BY x"
+        )
+        assert result["sq"] == [1.0, 4.0]
+
+    def test_window_functions_work(self):
+        """Window functions work through the authorizer."""
+        s = self._store_with_data()
+        result = self._query_df_bypassing_sqlglot(
+            s, "SELECT x, ROW_NUMBER() OVER (ORDER BY x) AS rn FROM t"
+        )
+        assert result["rn"] == [1, 2]
+
 
 class TestReservedTableNames:
     """Tests for _RESERVED_TABLE_NAMES blocking."""
