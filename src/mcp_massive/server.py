@@ -15,7 +15,9 @@ load_dotenv()
 MASSIVE_API_KEY = os.environ.get("MASSIVE_API_KEY", "")
 if not MASSIVE_API_KEY:
     print("Warning: MASSIVE_API_KEY environment variable not set.")
-    print("Please set it in your environment or create a .env file with MASSIVE_API_KEY=your_key")
+    print(
+        "Please set it in your environment or create a .env file with MASSIVE_API_KEY=your_key"
+    )
 
 version_number = "MCP-Massive/unknown"
 try:
@@ -1430,25 +1432,25 @@ async def list_benzinga_news(
     sort: Optional[str] = None,
 ) -> str:
     """
-    Retrieve real-time structured, timestamped news articles from Benzinga v2 API, including headlines, 
-    full-text content, tickers, categories, and more. Each article entry contains metadata such as author, 
-    publication time, and topic channels, as well as optional elements like teaser summaries, article body text, 
-    and images. Articles can be filtered by ticker and time, and are returned in a consistent format for easy 
-    parsing and integration. This endpoint is ideal for building alerting systems, autonomous risk analysis, 
+    Retrieve real-time structured, timestamped news articles from Benzinga v2 API, including headlines,
+    full-text content, tickers, categories, and more. Each article entry contains metadata such as author,
+    publication time, and topic channels, as well as optional elements like teaser summaries, article body text,
+    and images. Articles can be filtered by ticker and time, and are returned in a consistent format for easy
+    parsing and integration. This endpoint is ideal for building alerting systems, autonomous risk analysis,
     and sentiment-driven trading strategies.
-    
+
     Args:
-        published: The timestamp (formatted as an ISO 8601 timestamp) when the news article was originally 
+        published: The timestamp (formatted as an ISO 8601 timestamp) when the news article was originally
                   published. Value must be an integer timestamp in seconds or formatted 'yyyy-mm-dd'.
         channels: Filter for arrays that contain the value (e.g., 'News', 'Price Target').
         tags: Filter for arrays that contain the value.
         author: The name of the journalist or entity that authored the news article.
         stocks: Filter for arrays that contain the value.
         tickers: Filter for arrays that contain the value.
-        limit: Limit the maximum number of results returned. Defaults to 100 if not specified. 
+        limit: Limit the maximum number of results returned. Defaults to 100 if not specified.
                The maximum allowed limit is 50000.
-        sort: A comma separated list of sort columns. For each column, append '.asc' or '.desc' to specify 
-              the sort direction. The sort column defaults to 'published' if not specified. 
+        sort: A comma separated list of sort columns. For each column, append '.asc' or '.desc' to specify
+              the sort direction. The sort column defaults to 'published' if not specified.
               The sort order defaults to 'desc' if not specified.
     """
     try:

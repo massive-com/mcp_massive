@@ -4,6 +4,7 @@ import math
 import re
 import sqlite3
 import time
+from typing import Any, cast
 
 from pydantic import BaseModel, Field
 
@@ -43,7 +44,7 @@ class Table:
             if len(unique_lengths) > 1:
                 raise ValueError(
                     f"All columns must have the same length, got inconsistent lengths: "
-                    f"{dict(sorted(((c, l) for c, l in lengths.items()), key=lambda x: x[0]))}"
+                    f"{dict(sorted(((col, length) for col, length in lengths.items()), key=lambda x: x[0]))}"
                 )
         self.columns = columns
         self.data = data
@@ -134,9 +135,12 @@ class Table:
                 if v is None:
                     return (2, "", "")
                 return (0, type(v).__name__, str(v))
+
             indices = sorted(range(len(self)), key=_mixed_key)
         else:
-            indices = sorted(range(len(self)), key=lambda i: (col_data[i] is None, col_data[i]))
+            indices = sorted(
+                range(len(self)), key=lambda i: (col_data[i] is None, col_data[i])
+            )
 
         new_data = {col: [self.data[col][i] for i in indices] for col in self.columns}
         return Table(list(self.columns), new_data)
@@ -176,9 +180,7 @@ def _create_and_populate_table(
     """Create a SQLite table from a Table and bulk-insert rows."""
     cols = table.columns
     affinities = [_infer_sqlite_affinity(table.data[c]) for c in cols]
-    col_defs = ", ".join(
-        f'"{c}" {a}' for c, a in zip(cols, affinities)
-    )
+    col_defs = ", ".join(f'"{c}" {a}' for c, a in zip(cols, affinities))
     conn.execute(f'CREATE TABLE "{name}" ({col_defs})')
     if len(table) > 0:
         placeholders = ", ".join("?" for _ in cols)
@@ -213,13 +215,18 @@ def _register_custom_functions(conn: sqlite3.Connection) -> None:
     conn.create_function("LN", 1, lambda x: math.log(x) if x is not None else None)
     conn.create_function("EXP", 1, lambda x: math.exp(x) if x is not None else None)
     conn.create_function(
-        "POWER", 2, lambda x, y: math.pow(x, y) if x is not None and y is not None else None
+        "POWER",
+        2,
+        lambda x, y: math.pow(x, y) if x is not None and y is not None else None,
     )
     conn.create_function(
         "CONCAT", -1, lambda *args: "".join(str(a) for a in args if a is not None)
     )
-    conn.create_aggregate("STDDEV", 1, _StddevAggregate)
-    conn.create_aggregate("STDDEV_SAMP", 1, _StddevAggregate)
+    # The typeshed _AggregateProtocol uses narrow int types in its stubs,
+    # but sqlite3 accepts any scalar at runtime.  Use cast(Any, ...) so
+    # the type checker does not reject the class.
+    conn.create_aggregate("STDDEV", 1, cast(Any, _StddevAggregate))
+    conn.create_aggregate("STDDEV_SAMP", 1, cast(Any, _StddevAggregate))
 
 
 def _preprocess_sql(sql: str) -> str:
@@ -462,7 +469,9 @@ class DataFrameStore:
             )
 
         if len(table) > self._max_rows:
-            raise ValueError(f"Too many rows ({len(table)}). Maximum is {self._max_rows}.")
+            raise ValueError(
+                f"Too many rows ({len(table)}). Maximum is {self._max_rows}."
+            )
 
         self._check_duplicate_columns(table)
         self._tables[name] = (table, time.time())
@@ -630,7 +639,9 @@ class DataFrameStore:
         """Remove tables that have exceeded their TTL."""
         now = time.time()
         expired = [
-            name for name, (_table, ts) in self._tables.items() if now - ts > TTL_SECONDS
+            name
+            for name, (_table, ts) in self._tables.items()
+            if now - ts > TTL_SECONDS
         ]
         for name in expired:
             del self._tables[name]

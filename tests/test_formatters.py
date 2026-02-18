@@ -8,6 +8,8 @@ from mcp_massive.formatters import (
     _flatten_dict,
     strip_response_metadata,
 )
+
+
 class TestStripResponseMetadata:
     """Tests for the strip_response_metadata helper function."""
 
