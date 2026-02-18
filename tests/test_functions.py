@@ -208,8 +208,9 @@ class TestBlackScholesGreeks:
             ],
         )
         delta = result["delta"][0]
-        # Put delta = call delta - 1, ATM call delta ≈ 0.637 so put ≈ -0.363
+        # Put delta = call delta - 1 ≈ 0.6368 - 1 = -0.3632
         assert -1.0 < delta < 0.0
+        assert abs(delta - (-0.3631693488243809)) < 0.01
 
     def test_bs_gamma(self, bs_df):
         result = apply_pipeline(
@@ -229,8 +230,9 @@ class TestBlackScholesGreeks:
             ],
         )
         gamma = result["gamma"][0]
-        # ATM gamma ≈ 0.0188
+        # ATM gamma ≈ 0.01876
         assert 0.01 < gamma < 0.03
+        assert abs(gamma - 0.018762017345846895) < 0.001
 
     def test_bs_theta_call(self, bs_df):
         result = apply_pipeline(
@@ -251,8 +253,9 @@ class TestBlackScholesGreeks:
             ],
         )
         theta = result["theta"][0]
-        # Daily theta should be negative for long options
+        # Daily theta should be negative for long options ≈ -0.01757
         assert theta < 0
+        assert abs(theta - (-0.01757267820941972)) < 0.001
 
     def test_bs_vega(self, bs_df):
         result = apply_pipeline(
@@ -272,7 +275,9 @@ class TestBlackScholesGreeks:
             ],
         )
         vega = result["vega"][0]
-        assert vega > 0  # Vega is always positive
+        # Vega per 1% vol change ≈ 0.37524
+        assert vega > 0
+        assert abs(vega - 0.3752403469169379) < 0.01
 
     def test_bs_rho_call(self, bs_df):
         result = apply_pipeline(
@@ -293,7 +298,9 @@ class TestBlackScholesGreeks:
             ],
         )
         rho = result["rho"][0]
-        assert rho > 0  # Call rho is positive
+        # Call rho per 1% rate change ≈ 0.53232
+        assert rho > 0
+        assert abs(rho - 0.5323248154537634) < 0.01
 
     def test_bs_rho_put(self, bs_df):
         result = apply_pipeline(
@@ -314,7 +321,9 @@ class TestBlackScholesGreeks:
             ],
         )
         rho = result["rho"][0]
-        assert rho < 0  # Put rho is negative
+        # Put rho per 1% rate change ≈ -0.41890
+        assert rho < 0
+        assert abs(rho - (-0.4189046090469506)) < 0.01
 
     def test_invalid_option_type(self, bs_df):
         """Invalid option_type should raise ValueError."""
@@ -515,7 +524,7 @@ class TestEma:
             ],
         )
         ema = result["ema3"]
-        alpha = 2.0 / (3 + 1)  # 0.5
+        # alpha = 2.0 / (3 + 1) = 0.5
         # ema[0] = 1.0
         assert abs(ema[0] - 1.0) < 1e-10
         # ema[1] = 0.5 * 2 + 0.5 * 1 = 1.5
@@ -541,9 +550,12 @@ class TestEma:
         ema = result["ema_out"]
         # First value is NaN input, should be None in output
         assert ema[0] is None
-        # Once valid data starts, EMA should produce valid values
-        assert ema[2] is not None
-        assert ema[3] is not None
+        # alpha = 0.5, seed at index 1 = 2.0
+        assert abs(ema[1] - 2.0) < 1e-10
+        # ema[2] = 0.5*3 + 0.5*2.0 = 2.5
+        assert abs(ema[2] - 2.5) < 1e-10
+        # ema[3] = 0.5*4 + 0.5*2.5 = 3.25
+        assert abs(ema[3] - 3.25) < 1e-10
 
     def test_ema_chained_after_simple_return(self):
         """EMA should work when chained after simple_return (which produces NaN at [0])."""
@@ -566,9 +578,14 @@ class TestEma:
         ema_ret = result["ema_ret"]
         # First value should be None (NaN from simple_return)
         assert ema_ret[0] is None
-        # Later values should be valid numbers
-        assert ema_ret[3] is not None
-        assert ema_ret[4] is not None
+        # EMA seeds at index 1 (first valid return = 0.1), alpha=0.5
+        assert abs(ema_ret[1] - 0.1) < 1e-10
+        # ema[2] = 0.5*(-5/110) + 0.5*0.1 ≈ 0.02727
+        assert abs(ema_ret[2] - 0.027272727272727275) < 1e-10
+        # ema[3] = 0.5*(10/105) + 0.5*ema[2] ≈ 0.06126
+        assert abs(ema_ret[3] - 0.06125541125541126) < 1e-10
+        # ema[4] = 0.5*(5/115) + 0.5*ema[3] ≈ 0.05237
+        assert abs(ema_ret[4] - 0.05236683606248824) < 1e-10
 
     def test_ema_empty_table(self):
         """EMA on empty table should return empty result."""
@@ -610,7 +627,13 @@ class TestEmptyTableFunctions:
         df = _table(price=[])
         result = apply_pipeline(
             df,
-            [{"function": "simple_return", "inputs": {"column": "price"}, "output": "r"}],
+            [
+                {
+                    "function": "simple_return",
+                    "inputs": {"column": "price"},
+                    "output": "r",
+                }
+            ],
         )
         assert len(result["r"]) == 0
 
@@ -626,7 +649,13 @@ class TestEmptyTableFunctions:
         df = _table(price=[])
         result = apply_pipeline(
             df,
-            [{"function": "cumulative_return", "inputs": {"column": "price"}, "output": "r"}],
+            [
+                {
+                    "function": "cumulative_return",
+                    "inputs": {"column": "price"},
+                    "output": "r",
+                }
+            ],
         )
         assert len(result["r"]) == 0
 
@@ -634,7 +663,13 @@ class TestEmptyTableFunctions:
         df = _table(price=[])
         result = apply_pipeline(
             df,
-            [{"function": "sma", "inputs": {"column": "price", "window": 3}, "output": "s"}],
+            [
+                {
+                    "function": "sma",
+                    "inputs": {"column": "price", "window": 3},
+                    "output": "s",
+                }
+            ],
         )
         assert len(result["s"]) == 0
 
@@ -766,8 +801,8 @@ class TestTechnicals:
         )
         sharpe = result["sharpe"][4]
         assert sharpe is not None
-        # mean = 0.10, std ≈ 0.01581 → sharpe ≈ 6.32
-        assert sharpe > 5.0  # High sharpe for consistent returns
+        # mean = 0.10, std(ddof=1) ≈ 0.01581, sharpe ≈ 6.3246
+        assert abs(sharpe - 6.324555320336759) < 0.01
 
 
 # ---------------------------------------------------------------------------
@@ -1018,7 +1053,7 @@ class TestResolveInput:
         df = _table(price=[1.0, 2.0, 3.0])
         result = resolve_input(df, "price", ParamKind.COLUMN)
         assert isinstance(result, np.ndarray)
-        np.testing.assert_allclose(result, [1.0, 2.0, 3.0])
+        assert np.allclose(result, [1.0, 2.0, 3.0])
 
     def test_column_missing(self):
         df = _table(x=[1.0])

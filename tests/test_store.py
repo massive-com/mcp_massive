@@ -1,6 +1,7 @@
 import time
 from unittest.mock import patch
 
+import math
 import pytest
 
 from mcp_massive.store import (
@@ -69,7 +70,7 @@ class TestTable:
         assert csv == "a,b\n1,x\n2,y\n"
 
     def test_write_csv_with_special_characters(self):
-        t = Table(["name"], {"name": ['has,comma', 'has"quote', "normal"]})
+        t = Table(["name"], {"name": ["has,comma", 'has"quote', "normal"]})
         csv = t.write_csv()
         lines = csv.strip().split("\n")
         assert len(lines) == 4  # header + 3 rows
@@ -599,6 +600,10 @@ class TestScalarSubqueryRewrite:
         assert df["first_close"][0] == 100.0
         assert df["last_close"][0] == 110.0
         assert df["n_days"][0] == 3
+        # volatility = STDDEV([0.01,-0.02,0.03]) * SQRT(252) ≈ 0.39950
+        assert abs(df["volatility"][0] - 0.3994996871087636) < 1e-10
+        # downside_dev = SQRT(AVG([0, 0.0004, 0])) * SQRT(252) ≈ 0.18330
+        assert abs(df["downside_dev"][0] - 0.18330302779823363) < 1e-10
 
     def test_scalar_subquery_with_existing_cte(self):
         """Query that already has a WITH clause plus scalar subqueries."""
@@ -697,7 +702,63 @@ class TestScalarSubqueryRewrite:
         )
         assert df["ticker"][0] == "TICK"
         assert df["pct"][0] == 10.0  # (110/100 - 1) * 100
+        # ann_vol = ROUND(STDDEV([0.01,-0.02,0.03]) * SQRT(252) * 100, 2)
+        assert df["ann_vol"][0] == 39.95
         assert "n" not in df.columns  # n not selected in outer
+
+
+class TestStddevAggregate:
+    """Verify STDDEV / STDDEV_SAMP custom aggregates return correct values."""
+
+    def test_stddev_correct_value(self):
+        s = DataFrameStore()
+        s.store(
+            "t",
+            [
+                {"v": 2.0},
+                {"v": 4.0},
+                {"v": 4.0},
+                {"v": 4.0},
+                {"v": 5.0},
+                {"v": 5.0},
+                {"v": 7.0},
+                {"v": 9.0},
+            ],
+        )
+        df = s.query_df("SELECT STDDEV(v) AS sd FROM t")
+        # Sample stddev of [2,4,4,4,5,5,7,9]: mean=5, var=32/7, sd≈2.1381
+
+        vals = [2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0]
+        expected = math.sqrt(sum((x - 5.0) ** 2 for x in vals) / 7)
+        assert abs(df["sd"][0] - expected) < 1e-10
+
+    def test_stddev_samp_same_as_stddev(self):
+        s = DataFrameStore()
+        s.store("t", [{"v": 1.0}, {"v": 3.0}, {"v": 5.0}])
+        df = s.query_df("SELECT STDDEV(v) AS sd, STDDEV_SAMP(v) AS ss FROM t")
+        assert abs(df["sd"][0] - df["ss"][0]) < 1e-15
+
+    def test_stddev_single_row_returns_null(self):
+        s = DataFrameStore()
+        s.store("t", [{"v": 42.0}])
+        df = s.query_df("SELECT STDDEV(v) AS sd FROM t")
+        assert df["sd"][0] is None
+
+    def test_stddev_no_rows_returns_null(self):
+        s = DataFrameStore()
+        s.store("t", [{"v": 1.0}])
+        df = s.query_df("SELECT STDDEV(v) AS sd FROM t WHERE v > 999")
+        assert df["sd"][0] is None
+
+    def test_stddev_ignores_nulls(self):
+        s = DataFrameStore()
+        s.store("t", [{"v": 1.0}, {"v": None}, {"v": 3.0}])
+        df = s.query_df("SELECT STDDEV(v) AS sd FROM t")
+        # Sample stddev of [1, 3] with n-1 = sqrt((1+1)/1) = sqrt(2)
+        import math
+
+        expected = math.sqrt(2.0)
+        assert abs(df["sd"][0] - expected) < 1e-10
 
 
 class TestRewriteQueryCorrectness:

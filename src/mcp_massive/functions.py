@@ -159,7 +159,9 @@ def resolve_input(
     elif kind == ParamKind.COL_OR_LIT:
         if isinstance(value, str):
             if value not in table.data:
-                raise ValueError(f"Column '{value}' not found. Available: {table.columns}")
+                raise ValueError(
+                    f"Column '{value}' not found. Available: {table.columns}"
+                )
             return np.array(table.get_column(value), dtype=np.float64)
         elif isinstance(value, (int, float)):
             return float(value)
@@ -379,7 +381,7 @@ def _rolling_std(arr: np.ndarray, window: int) -> np.ndarray:
     n = len(arr)
     result = np.full(n, np.nan)
     for i in range(window - 1, n):
-        window_data = arr[i - window + 1: i + 1]
+        window_data = arr[i - window + 1 : i + 1]
         if np.any(np.isnan(window_data)):
             continue
         result[i] = np.std(window_data, ddof=1)
@@ -408,10 +410,10 @@ def _impl_sortino_ratio(table: Table, inputs: dict[str, Any]) -> np.ndarray:
     n = len(arr)
     result = np.full(n, np.nan)
     for i in range(window - 1, n):
-        window_data = arr[i - window + 1: i + 1]
+        window_data = arr[i - window + 1 : i + 1]
         if np.any(np.isnan(window_data)):
             continue
-        ds_window = downside_sq[i - window + 1: i + 1]
+        ds_window = downside_sq[i - window + 1 : i + 1]
         ds_mean = np.mean(ds_window)
         if ds_mean > 0:
             ds_std = math.sqrt(ds_mean)
