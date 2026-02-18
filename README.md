@@ -16,18 +16,41 @@
 
  [![GitHub release](https://img.shields.io/github/v/release/massive-com/mcp_massive)](https://github.com/massive-com/mcp_massive/releases)
 
-A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that provides access to [Massive.com](https://massive.com?utm_campaign=mcp&utm_medium=referral&utm_source=github) financial market data API through an LLM-friendly interface.
+A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that provides access to the full [Massive.com](https://massive.com?utm_campaign=mcp&utm_medium=referral&utm_source=github) financial data API through an LLM-friendly interface.
 
-## Overview
+Rather than exposing one tool per endpoint, this server gives the LLM four composable tools — **search**, **docs**, **call**, and **query** — that cover the entire Massive.com API surface. Data can be stored in-memory as DataFrames, queried with SQL, and enriched with built-in financial functions.
 
-This server exposes all Massive.com API endpoints as MCP tools, providing access to comprehensive financial market data including:
+## Tools
 
-- Stock, options, forex, and crypto aggregates and bars
+| Tool | Description |
+|---|---|
+| `search_endpoints` | Search for API endpoints and built-in functions by natural language query. Returns names, URL patterns, and descriptions. Supports scoping to `endpoints`, `functions`, or `all`. |
+| `get_endpoint_docs` | Get parameter documentation for a specific endpoint. Pass the docs URL from `search_endpoints` results. |
+| `call_api` | Call any Massive.com REST API endpoint. Supports storing results as an in-memory DataFrame (`store_as`) and applying post-processing functions (`apply`). Paginated responses include a next-page hint. |
+| `query_data` | Run SQL against stored DataFrames using SQLite. Supports `SHOW TABLES`, `DESCRIBE <table>`, `DROP TABLE <table>`, CTEs, window functions, and more. Results can also be post-processed with `apply`. |
+
+### Built-in Functions
+
+Functions can be applied to API results or query output via the `apply` parameter on `call_api` and `query_data`. Use `search_endpoints` with `scope="functions"` to discover them.
+
+| Category | Functions |
+|---|---|
+| **Greeks** | `bs_price`, `bs_delta`, `bs_gamma`, `bs_theta`, `bs_vega`, `bs_rho` — Black-Scholes option pricing and greeks |
+| **Returns** | `simple_return`, `log_return`, `cumulative_return`, `sharpe_ratio`, `sortino_ratio` |
+| **Technical** | `sma` (simple moving average), `ema` (exponential moving average) |
+
+### Data Coverage
+
+The server dynamically indexes all Massive.com API endpoints at startup from [`llms.txt`](https://massive.com/docs/rest/llms.txt), so it automatically stays in sync with the API. Coverage includes:
+
+- Stock, options, forex, crypto, and futures aggregates
 - Real-time and historical trades and quotes
-- Market snapshots
+- Market snapshots, gainers/losers
 - Ticker details and reference data
-- Dividends and splits data
+- Dividends, splits, IPOs
 - Financial fundamentals
+- Analyst ratings and news (Benzinga)
+- Treasury yields, inflation data
 - Market status and holidays
 
 ## Installation
@@ -36,8 +59,7 @@ This server exposes all Massive.com API endpoints as MCP tools, providing access
 
 - Python 3.10+
 - A Massive.com API key <br> [![Button]][Link]
-- [Astral UV](https://docs.astral.sh/uv/getting-started/installation/)
-  - For existing installs, check that you have a version that supports the `uvx` command.
+- [Astral UV](https://docs.astral.sh/uv/getting-started/installation/) (v0.4.0+)
 
 ### Claude Code
 First, install [Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview)
@@ -46,14 +68,24 @@ First, install [Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools
 npm install -g @anthropic-ai/claude-code
 ```
 
-Use the following command to add the Massive MCP server to your local environment.
-This assumes `uvx` is in your $PATH; if not, then you need to provide the full
-path to `uvx`.
+Install the MCP server, then register it with Claude Code:
 
 ```bash
-# Claude CLI
-claude mcp add massive -e MASSIVE_API_KEY=your_api_key_here -- uvx --from git+https://github.com/massive-com/mcp_massive@v0.6.0 mcp_massive
+# Install the server (one-time — downloads dependencies ahead of time)
+uv tool install "mcp_massive @ git+https://github.com/massive-com/mcp_massive@v0.8.0"
+
+# Register with Claude Code
+claude mcp add massive -e MASSIVE_API_KEY=your_api_key_here -- mcp_massive
 ```
+
+To upgrade to a new version later:
+
+```bash
+uv tool upgrade mcp_massive
+```
+
+> [!NOTE]
+> **Upgrading from `uvx` or `uv run --with`?** Previous versions recommended `uvx --from ... mcp_massive` or `uv run --with`. These commands download dependencies on every cold start, which can cause the server to exceed Claude's 30-second connection timeout. Switch to `uv tool install` as shown above — it downloads dependencies once and starts instantly after that.
 
 This command will install the MCP server in your current project.
 If you want to install it globally, you can run the command with `-s <scope>` flag.
@@ -67,11 +99,23 @@ You can also run `claude mcp add-from-claude-desktop` if the MCP server is insta
 ### Claude Desktop
 
 1. Follow the [Claude Desktop MCP installation instructions](https://modelcontextprotocol.io/quickstart/user) to complete the initial installation and find your configuration file.
-1. Use the following example as reference to add Massive's MCP server.
-Make sure you complete the various fields.
-    1. Path find your path to `uvx`, run `which uvx` in your terminal.
-    2. Replace `<your_api_key_here>` with your actual Massive.com API key.
-    3. Replace `<your_home_directory>` with your home directory path, e.g., `/home/username` (Mac/Linux) or `C:\Users\username` (Windows).
+1. Install the server:
+
+```bash
+uv tool install "mcp_massive @ git+https://github.com/massive-com/mcp_massive@v0.8.0"
+```
+
+3. Find the installed binary path:
+
+```bash
+# Mac/Linux
+which mcp_massive
+
+# Windows
+where mcp_massive
+```
+
+4. Add the server to your Claude Desktop config. Replace `<path_to_mcp_massive>` with the output from the previous step, and fill in the remaining fields.
 
 <details>
   <summary>claude_desktop_config.json</summary>
@@ -80,12 +124,7 @@ Make sure you complete the various fields.
 {
     "mcpServers": {
         "massive": {
-            "command": "<path_to_your_uvx_install>/uvx",
-            "args": [
-                "--from",
-                "git+https://github.com/massive-com/mcp_massive@v0.6.0",
-                "mcp_massive"
-            ],
+            "command": "<path_to_mcp_massive>",
             "env": {
                 "MASSIVE_API_KEY": "<your_api_key_here>",
                 "HOME": "<your_home_directory>"
@@ -96,18 +135,30 @@ Make sure you complete the various fields.
 ```
 </details>
 
-## Transport Configuration
+## Configuration
 
-By default, STDIO transport is used.
+### Environment Variables
 
-To configure [SSE](https://modelcontextprotocol.io/specification/2024-11-05/basic/transports#http-with-sse) or [Streamable HTTP](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http), set the `MCP_TRANSPORT` environment variable.
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `MASSIVE_API_KEY` | Yes | — | Your Massive.com API key |
+| `POLYGON_API_KEY` | No | — | Deprecated alias for `MASSIVE_API_KEY` |
+| `MCP_TRANSPORT` | No | `stdio` | Transport protocol: `stdio`, `sse`, or `streamable-http` |
+| `MASSIVE_API_BASE_URL` | No | `https://api.massive.com` | Base URL for API requests |
+| `MASSIVE_LLMS_TXT_URL` | No | `https://massive.com/docs/rest/llms.txt` | URL for the endpoint index |
+| `MASSIVE_MAX_TABLES` | No | `50` | Maximum number of in-memory DataFrames |
+| `MASSIVE_MAX_ROWS` | No | `50000` | Maximum rows per stored DataFrame |
 
-Example:
+### Transport
+
+By default, STDIO transport is used. The transport can be set via the `--transport` CLI argument or the `MCP_TRANSPORT` environment variable (CLI argument takes precedence).
 
 ```bash
-MCP_TRANSPORT=streamable-http \
-MASSIVE_API_KEY=<your_api_key_here> \
-uv run entrypoint.py
+# CLI argument
+MASSIVE_API_KEY=<your_api_key_here> uv run mcp_massive --transport streamable-http
+
+# Environment variable
+MCP_TRANSPORT=streamable-http MASSIVE_API_KEY=<your_api_key_here> uv run mcp_massive
 ```
 
 ## Usage Examples
@@ -119,22 +170,9 @@ Get the latest price for AAPL stock
 Show me yesterday's trading volume for MSFT
 What were the biggest stock market gainers today?
 Get me the latest crypto market data for BTC-USD
+Calculate the 20-day SMA for AAPL closing prices over the last 3 months
+Compute Black-Scholes delta for these option contracts
 ```
-
-## Available Tools
-
-This MCP server implements all Massive.com API endpoints as tools, including:
-
-- `get_aggs` - Stock aggregates (OHLC) data for a specific ticker
-- `list_trades` - Historical trade data
-- `get_last_trade` - Latest trade for a symbol
-- `list_ticker_news` - Recent news articles for tickers
-- `get_snapshot_ticker` - Current market snapshot for a ticker
-- `get_market_status` - Current market status and trading hours
-- `list_stock_financials` - Fundamental financial data
-- And many more...
-
-Each tool follows the Massive.com SDK parameter structure while converting responses to standard JSON that LLMs can easily process.
 
 ## Development
 
@@ -153,23 +191,23 @@ MASSIVE_API_KEY=your_api_key_here uv run mcp_massive
 <details>
   <summary>Local Dev Config for claude_desktop_config.json</summary>
 
-```json
+Install from your local checkout, then reference the binary directly:
 
+```bash
+uv tool install --force /path/to/mcp_massive
+```
+
+```json
+{
   "mcpServers": {
     "massive": {
-      "command": "/your/path/.cargo/bin/uv",
-      "args": [
-        "run",
-        "--with",
-        "/your/path/mcp_massive",
-        "mcp_massive"
-      ],
+      "command": "mcp_massive",
       "env": {
-        "MASSIVE_API_KEY": "your_api_key_here",
-        "HOME": "/Users/danny"
+        "MASSIVE_API_KEY": "your_api_key_here"
       }
     }
   }
+}
 ```
 </details>
 

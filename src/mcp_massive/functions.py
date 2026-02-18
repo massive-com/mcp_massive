@@ -114,12 +114,12 @@ def _register(func_def: FunctionDef) -> FunctionDef:
 # Normal CDF / PDF
 # ---------------------------------------------------------------------------
 
+_SQRT_2 = math.sqrt(2.0)
+
 
 def _norm_cdf(x: np.ndarray) -> np.ndarray:
-    """Vectorized standard normal CDF via scipy."""
-    from scipy.special import ndtr
-
-    return ndtr(x)
+    """Vectorized standard normal CDF using math.erfc."""
+    return 0.5 * np.vectorize(math.erfc)(-x / _SQRT_2)
 
 
 def _norm_pdf(x: np.ndarray) -> np.ndarray:
