@@ -1,18 +1,18 @@
 [project]
 name = "mcp_massive"
-version = "0.8.0"
+version = "0.8.1"
 description = "A MCP server project"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
-    "mcp>=1.15.0",
+    "mcp>=1.26.0",
     "httpx>=0.28.0",
-    "numpy>=1.24.0",
+    "numpy>=2.4.2",
     "bm25s>=0.2.0",
     "snowballstemmer>=2.2.0",
-    "python-dotenv>=1.2.0",
-    "pydantic>=2.0.0",
-    "sqlglot>=26.0.0",
+    "python-dotenv>=1.2.1",
+    "pydantic>=2.12.0",
+    "sqlglot>=28.10.0",
 ]
 [[project.authors]]
 name = "Massive"
