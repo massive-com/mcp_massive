@@ -387,7 +387,7 @@ class TestStoreQuery:
     def test_simple_select(self):
         s = DataFrameStore()
         s.store("t", [{"a": 1, "b": 2}, {"a": 3, "b": 4}])
-        df = s.query_df("SELECT * FROM t")
+        df = s.query_table("SELECT * FROM t")
         assert df.columns == ["a", "b"]
         assert len(df) == 2
         assert df["a"] == [1, 3]
@@ -406,7 +406,7 @@ class TestStoreQuery:
     def test_where_clause(self):
         s = DataFrameStore()
         s.store("t", [{"x": 1}, {"x": 2}, {"x": 3}])
-        df = s.query_df("SELECT * FROM t WHERE x > 1")
+        df = s.query_table("SELECT * FROM t WHERE x > 1")
         assert len(df) == 2
         assert sorted(df["x"]) == [2, 3]
 
@@ -419,7 +419,7 @@ class TestStoreQuery:
         s.store(
             "volume", [{"ticker": "AAPL", "vol": 1000}, {"ticker": "GOOG", "vol": 500}]
         )
-        df = s.query_df(
+        df = s.query_table(
             "SELECT p.ticker, p.price, v.vol "
             "FROM prices p JOIN volume v ON p.ticker = v.ticker "
             "ORDER BY p.ticker"
@@ -432,7 +432,7 @@ class TestStoreQuery:
     def test_aggregation(self):
         s = DataFrameStore()
         s.store("t", [{"g": "a", "v": 10}, {"g": "a", "v": 20}, {"g": "b", "v": 30}])
-        df = s.query_df("SELECT g, SUM(v) AS total FROM t GROUP BY g ORDER BY g")
+        df = s.query_table("SELECT g, SUM(v) AS total FROM t GROUP BY g ORDER BY g")
         assert len(df) == 2
         assert df["g"] == ["a", "b"]
         assert df["total"] == [30, 30]
@@ -440,7 +440,7 @@ class TestStoreQuery:
     def test_empty_result(self):
         s = DataFrameStore()
         s.store("t", [{"x": 1}])
-        df = s.query_df("SELECT * FROM t WHERE x > 100")
+        df = s.query_table("SELECT * FROM t WHERE x > 100")
         assert len(df) == 0
 
     def test_invalid_sql(self):
@@ -452,7 +452,7 @@ class TestStoreQuery:
     def test_count(self):
         s = DataFrameStore()
         s.store("t", [{"x": i} for i in range(10)])
-        df = s.query_df("SELECT COUNT(*) AS cnt FROM t")
+        df = s.query_table("SELECT COUNT(*) AS cnt FROM t")
         assert df["cnt"][0] == 10
 
 
@@ -460,14 +460,14 @@ class TestGetDataFrame:
     def test_get_existing(self):
         s = DataFrameStore()
         s.store("t", [{"x": 1, "y": 2}])
-        df = s.get_dataframe("t")
+        df = s.get_table("t")
         assert df.columns == ["x", "y"]
         assert len(df) == 1
 
     def test_get_missing(self):
         s = DataFrameStore()
         with pytest.raises(ValueError, match="not found"):
-            s.get_dataframe("nope")
+            s.get_table("nope")
 
 
 class TestStoreTable:
@@ -514,13 +514,13 @@ class TestDuplicateColumnGuardrails:
         """SQLite auto-aliases duplicate expressions like min(x), max(x)."""
         s = DataFrameStore()
         s.store("t", [{"x": 1, "g": "a"}, {"x": 2, "g": "a"}, {"x": 3, "g": "b"}])
-        df = s.query_df("SELECT MIN(x), MAX(x) FROM t")
+        df = s.query_table("SELECT MIN(x), MAX(x) FROM t")
         assert len(df) == 1
 
     def test_aliased_expressions_work(self):
         s = DataFrameStore()
         s.store("t", [{"x": 1}, {"x": 2}, {"x": 3}])
-        df = s.query_df("SELECT MIN(x) AS min_x, MAX(x) AS max_x FROM t")
+        df = s.query_table("SELECT MIN(x) AS min_x, MAX(x) AS max_x FROM t")
         assert df.columns == ["min_x", "max_x"]
         assert df["min_x"][0] == 1
         assert df["max_x"][0] == 3
@@ -542,7 +542,7 @@ class TestScalarSubqueryRewrite:
     def test_scalar_subquery_in_select_is_rewritten(self):
         s = DataFrameStore()
         s.store("t", [{"t": 1, "c": 10.0}, {"t": 2, "c": 20.0}])
-        df = s.query_df(
+        df = s.query_table(
             "SELECT (SELECT c FROM t ORDER BY t ASC LIMIT 1) AS first_close,"
             " (SELECT c FROM t ORDER BY t DESC LIMIT 1) AS last_close FROM t"
         )
@@ -552,7 +552,7 @@ class TestScalarSubqueryRewrite:
     def test_scalar_subquery_with_aggregates(self):
         s = DataFrameStore()
         s.store("t", [{"t": 1, "c": 10.0}, {"t": 2, "c": 20.0}, {"t": 3, "c": 30.0}])
-        df = s.query_df(
+        df = s.query_table(
             "SELECT COUNT(*) AS n,"
             " (SELECT c FROM t ORDER BY t ASC LIMIT 1) AS first_close,"
             " (SELECT c FROM t ORDER BY t DESC LIMIT 1) AS last_close"
@@ -565,7 +565,7 @@ class TestScalarSubqueryRewrite:
     def test_scalar_subquery_with_where(self):
         s = DataFrameStore()
         s.store("t", [{"t": 1, "c": 10.0}, {"t": 2, "c": 20.0}, {"t": 3, "c": 30.0}])
-        df = s.query_df(
+        df = s.query_table(
             "SELECT 'X' AS ticker,"
             " (SELECT c FROM t WHERE t >= 2 ORDER BY t ASC LIMIT 1) AS first_close,"
             " COUNT(*) AS n"
@@ -585,7 +585,7 @@ class TestScalarSubqueryRewrite:
                 {"t": 3, "c": 110.0, "daily_return": 0.03},
             ],
         )
-        df = s.query_df(
+        df = s.query_table(
             "SELECT 'TICK' AS ticker, '5Y' AS period,"
             " (SELECT c FROM prices ORDER BY t ASC LIMIT 1) AS first_close,"
             " (SELECT c FROM prices ORDER BY t DESC LIMIT 1) AS last_close,"
@@ -609,7 +609,7 @@ class TestScalarSubqueryRewrite:
         """Query that already has a WITH clause plus scalar subqueries."""
         s = DataFrameStore()
         s.store("t", [{"t": 1, "c": 10.0}, {"t": 2, "c": 20.0}, {"t": 3, "c": 30.0}])
-        df = s.query_df(
+        df = s.query_table(
             "WITH filtered AS (SELECT * FROM t WHERE c > 5) "
             "SELECT COUNT(*) AS n,"
             " (SELECT c FROM filtered ORDER BY t ASC LIMIT 1) AS first_c"
@@ -622,7 +622,7 @@ class TestScalarSubqueryRewrite:
         """Subquery expression contains nested function calls with parens."""
         s = DataFrameStore()
         s.store("t", [{"t": 1, "v": 4.0}, {"t": 2, "v": 9.0}])
-        df = s.query_df(
+        df = s.query_table(
             "SELECT (SELECT SQRT(v) FROM t ORDER BY t ASC LIMIT 1) AS root_v,"
             " COUNT(*) AS n FROM t"
         )
@@ -633,7 +633,7 @@ class TestScalarSubqueryRewrite:
         """String literal containing 'SELECT' should not confuse the parser."""
         s = DataFrameStore()
         s.store("t", [{"t": 1, "c": 10.0}, {"t": 2, "c": 20.0}])
-        df = s.query_df(
+        df = s.query_table(
             "SELECT 'not a SELECT' AS label,"
             " (SELECT c FROM t ORDER BY t ASC LIMIT 1) AS first_c"
             " FROM t"
@@ -644,7 +644,7 @@ class TestScalarSubqueryRewrite:
     def test_no_rewrite_for_from_subquery(self):
         s = DataFrameStore()
         s.store("t", [{"x": 1, "y": 2}, {"x": 3, "y": 4}])
-        df = s.query_df("SELECT * FROM (SELECT x, y FROM t WHERE x > 1) AS sub")
+        df = s.query_table("SELECT * FROM (SELECT x, y FROM t WHERE x > 1) AS sub")
         assert len(df) == 1
         assert df["x"][0] == 3
         assert df["y"][0] == 4
@@ -652,20 +652,20 @@ class TestScalarSubqueryRewrite:
     def test_no_rewrite_for_where_subquery(self):
         s = DataFrameStore()
         s.store("t", [{"x": 1}, {"x": 2}, {"x": 3}])
-        df = s.query_df("SELECT * FROM t WHERE x IN (SELECT x FROM t WHERE x > 1)")
+        df = s.query_table("SELECT * FROM t WHERE x IN (SELECT x FROM t WHERE x > 1)")
         assert sorted(df["x"]) == [2, 3]
 
     def test_no_rewrite_for_plain_query(self):
         s = DataFrameStore()
         s.store("t", [{"x": 1}, {"x": 2}])
-        df = s.query_df("SELECT SUM(x) AS total FROM t")
+        df = s.query_table("SELECT SUM(x) AS total FROM t")
         assert df["total"][0] == 3
 
     def test_scalar_subquery_arithmetic_in_cte(self):
         """Subqueries used in arithmetic inside a CTE body."""
         s = DataFrameStore()
         s.store("t", [{"t": 1, "c": 100.0}, {"t": 2, "c": 120.0}, {"t": 3, "c": 150.0}])
-        df = s.query_df(
+        df = s.query_table(
             "WITH stats AS ("
             " SELECT (SELECT c FROM t ORDER BY t DESC LIMIT 1)"
             " / (SELECT c FROM t ORDER BY t ASC LIMIT 1) - 1 AS total_return,"
@@ -687,7 +687,7 @@ class TestScalarSubqueryRewrite:
                 {"t": 3, "c": 110.0, "daily_return": 0.03},
             ],
         )
-        df = s.query_df(
+        df = s.query_table(
             "WITH stats AS ("
             " SELECT 'TICK' AS ticker,"
             " (SELECT c FROM prices ORDER BY t DESC LIMIT 1)"
@@ -725,7 +725,7 @@ class TestStddevAggregate:
                 {"v": 9.0},
             ],
         )
-        df = s.query_df("SELECT STDDEV(v) AS sd FROM t")
+        df = s.query_table("SELECT STDDEV(v) AS sd FROM t")
         # Sample stddev of [2,4,4,4,5,5,7,9]: mean=5, var=32/7, sd≈2.1381
 
         vals = [2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0]
@@ -735,25 +735,25 @@ class TestStddevAggregate:
     def test_stddev_samp_same_as_stddev(self):
         s = DataFrameStore()
         s.store("t", [{"v": 1.0}, {"v": 3.0}, {"v": 5.0}])
-        df = s.query_df("SELECT STDDEV(v) AS sd, STDDEV_SAMP(v) AS ss FROM t")
+        df = s.query_table("SELECT STDDEV(v) AS sd, STDDEV_SAMP(v) AS ss FROM t")
         assert abs(df["sd"][0] - df["ss"][0]) < 1e-15
 
     def test_stddev_single_row_returns_null(self):
         s = DataFrameStore()
         s.store("t", [{"v": 42.0}])
-        df = s.query_df("SELECT STDDEV(v) AS sd FROM t")
+        df = s.query_table("SELECT STDDEV(v) AS sd FROM t")
         assert df["sd"][0] is None
 
     def test_stddev_no_rows_returns_null(self):
         s = DataFrameStore()
         s.store("t", [{"v": 1.0}])
-        df = s.query_df("SELECT STDDEV(v) AS sd FROM t WHERE v > 999")
+        df = s.query_table("SELECT STDDEV(v) AS sd FROM t WHERE v > 999")
         assert df["sd"][0] is None
 
     def test_stddev_ignores_nulls(self):
         s = DataFrameStore()
         s.store("t", [{"v": 1.0}, {"v": None}, {"v": 3.0}])
-        df = s.query_df("SELECT STDDEV(v) AS sd FROM t")
+        df = s.query_table("SELECT STDDEV(v) AS sd FROM t")
         # Sample stddev of [1, 3] with n-1 = sqrt((1+1)/1) = sqrt(2)
         import math
 
@@ -787,7 +787,7 @@ class TestRewriteQueryCorrectness:
     def test_row_count_not_inflated_by_cross_join(self):
         """CROSS JOIN with a single-row CTE must not multiply rows."""
         s = self._store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT t, c, "
             "(SELECT c FROM prices ORDER BY t ASC LIMIT 1) AS first_c "
             "FROM prices"
@@ -797,7 +797,7 @@ class TestRewriteQueryCorrectness:
     def test_row_count_preserved_with_where(self):
         """Filtering + scalar subquery must not change the filtered row count."""
         s = self._store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT t, "
             "(SELECT c FROM prices ORDER BY t ASC LIMIT 1) AS first_c "
             "FROM prices WHERE t >= 3"
@@ -807,7 +807,7 @@ class TestRewriteQueryCorrectness:
     def test_row_count_preserved_with_multiple_subqueries(self):
         """Multiple scalar subqueries should not compound row inflation."""
         s = self._store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT t, c, "
             "(SELECT c FROM prices ORDER BY t ASC LIMIT 1) AS first_c, "
             "(SELECT c FROM prices ORDER BY t DESC LIMIT 1) AS last_c, "
@@ -820,7 +820,7 @@ class TestRewriteQueryCorrectness:
 
     def test_first_and_last_values_are_correct(self):
         s = self._store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT "
             "(SELECT c FROM prices ORDER BY t ASC LIMIT 1) AS first_c, "
             "(SELECT c FROM prices ORDER BY t DESC LIMIT 1) AS last_c "
@@ -831,7 +831,7 @@ class TestRewriteQueryCorrectness:
 
     def test_scalar_min_max_values(self):
         s = self._store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT "
             "(SELECT MIN(c) FROM prices) AS min_c, "
             "(SELECT MAX(c) FROM prices) AS max_c "
@@ -845,7 +845,7 @@ class TestRewriteQueryCorrectness:
     def test_count_not_inflated(self):
         """COUNT(*) alongside scalar subqueries must reflect actual row count."""
         s = self._store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT COUNT(*) AS n, "
             "(SELECT c FROM prices ORDER BY t ASC LIMIT 1) AS first_c "
             "FROM prices"
@@ -857,7 +857,7 @@ class TestRewriteQueryCorrectness:
     def test_sum_not_inflated(self):
         """SUM must not be multiplied by CROSS JOIN fan-out."""
         s = self._store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT SUM(v) AS total_v, "
             "(SELECT c FROM prices ORDER BY t ASC LIMIT 1) AS first_c "
             "FROM prices"
@@ -868,7 +868,7 @@ class TestRewriteQueryCorrectness:
     def test_avg_not_affected(self):
         """AVG must not be affected by the rewrite."""
         s = self._store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT AVG(c) AS avg_c, "
             "(SELECT c FROM prices ORDER BY t DESC LIMIT 1) AS last_c "
             "FROM prices"
@@ -879,7 +879,7 @@ class TestRewriteQueryCorrectness:
 
     def test_count_with_where_and_subquery(self):
         s = self._store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT COUNT(*) AS n, "
             "(SELECT MIN(c) FROM prices) AS min_c "
             "FROM prices WHERE t >= 3"
@@ -892,7 +892,7 @@ class TestRewriteQueryCorrectness:
     def test_return_calculation(self):
         """(last / first - 1) must produce the correct return."""
         s = self._store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT "
             "(SELECT c FROM prices ORDER BY t DESC LIMIT 1) "
             "/ (SELECT c FROM prices ORDER BY t ASC LIMIT 1) - 1 AS total_return "
@@ -904,7 +904,7 @@ class TestRewriteQueryCorrectness:
     def test_arithmetic_in_cte_body(self):
         """Arithmetic involving subqueries inside a CTE must compute correctly."""
         s = self._store()
-        df = s.query_df(
+        df = s.query_table(
             "WITH stats AS ("
             " SELECT (SELECT c FROM prices ORDER BY t DESC LIMIT 1)"
             " / (SELECT c FROM prices ORDER BY t ASC LIMIT 1) - 1 AS ret,"
@@ -930,7 +930,7 @@ class TestRewriteQueryCorrectness:
                 {"g": "b", "v": 50},
             ],
         )
-        df = s.query_df(
+        df = s.query_table(
             "SELECT g, SUM(v) AS total, "
             "(SELECT MIN(v) FROM data) AS global_min "
             "FROM data GROUP BY g"
@@ -953,7 +953,7 @@ class TestRewriteQueryCorrectness:
                 {"g": "y", "v": 10},
             ],
         )
-        df = s.query_df(
+        df = s.query_table(
             "WITH agg AS ("
             " SELECT g, SUM(v) AS total,"
             " (SELECT MAX(v) FROM data) AS peak"
@@ -969,7 +969,7 @@ class TestRewriteQueryCorrectness:
     def test_string_literal_preserved(self):
         """String literals in SELECT must survive rewriting intact."""
         s = self._store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT 'hello' AS label, "
             "(SELECT c FROM prices ORDER BY t ASC LIMIT 1) AS first_c "
             "FROM prices"
@@ -979,7 +979,7 @@ class TestRewriteQueryCorrectness:
 
     def test_multiple_string_literals_and_subqueries(self):
         s = self._store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT 'AAPL' AS ticker, '5Y' AS period, "
             "(SELECT c FROM prices ORDER BY t ASC LIMIT 1) AS first_c, "
             "(SELECT c FROM prices ORDER BY t DESC LIMIT 1) AS last_c, "
@@ -998,14 +998,14 @@ class TestRewriteQueryCorrectness:
         """The rewritten query must produce the same result as a hand-written CTE."""
         s = self._store()
         # Query that triggers rewriting
-        rewritten_df = s.query_df(
+        rewritten_df = s.query_table(
             "SELECT COUNT(*) AS n, "
             "(SELECT c FROM prices ORDER BY t ASC LIMIT 1) AS first_c, "
             "(SELECT c FROM prices ORDER BY t DESC LIMIT 1) AS last_c "
             "FROM prices"
         )
         # Equivalent hand-written CTE (no rewriting needed)
-        manual_df = s.query_df(
+        manual_df = s.query_table(
             "WITH sq0 AS (SELECT c AS fc FROM prices ORDER BY t ASC LIMIT 1), "
             "sq1 AS (SELECT c AS lc FROM prices ORDER BY t DESC LIMIT 1) "
             "SELECT COUNT(*) AS n, MIN(sq0.fc) AS first_c, MIN(sq1.lc) AS last_c "
@@ -1018,14 +1018,14 @@ class TestRewriteQueryCorrectness:
     def test_rewritten_cte_matches_manual_cte(self):
         """CTE-body rewrite must match hand-written equivalent."""
         s = self._store()
-        rewritten_df = s.query_df(
+        rewritten_df = s.query_table(
             "WITH stats AS ("
             " SELECT (SELECT c FROM prices ORDER BY t DESC LIMIT 1)"
             " / (SELECT c FROM prices ORDER BY t ASC LIMIT 1) - 1 AS ret"
             " FROM prices"
             ") SELECT ret FROM stats"
         )
-        manual_df = s.query_df(
+        manual_df = s.query_table(
             "WITH fc AS (SELECT c AS v FROM prices ORDER BY t ASC LIMIT 1), "
             "lc AS (SELECT c AS v FROM prices ORDER BY t DESC LIMIT 1), "
             "stats AS (SELECT lc.v / fc.v - 1 AS ret FROM prices CROSS JOIN fc CROSS JOIN lc) "
@@ -1039,7 +1039,7 @@ class TestRewriteQueryCorrectness:
         """Scalar subquery on a single-row table must work correctly."""
         s = DataFrameStore()
         s.store("t", [{"x": 42}])
-        df = s.query_df("SELECT (SELECT x FROM t LIMIT 1) AS val FROM t")
+        df = s.query_table("SELECT (SELECT x FROM t LIMIT 1) AS val FROM t")
         assert len(df) == 1
         assert df["val"][0] == 42
 
@@ -1048,7 +1048,7 @@ class TestRewriteQueryCorrectness:
         s = DataFrameStore()
         s.store("a", [{"x": 1}, {"x": 2}, {"x": 3}])
         s.store("b", [{"y": 100}])
-        df = s.query_df(
+        df = s.query_table(
             "SELECT x, (SELECT y FROM b LIMIT 1) AS b_val FROM a ORDER BY x"
         )
         assert len(df) == 3
@@ -1059,7 +1059,7 @@ class TestRewriteQueryCorrectness:
         """NULLs in data must not be lost or mishandled during rewriting."""
         s = DataFrameStore()
         s.store("t", [{"x": 1, "y": None}, {"x": 2, "y": 10.0}])
-        df = s.query_df(
+        df = s.query_table(
             "SELECT x, y, (SELECT MIN(x) FROM t) AS min_x FROM t ORDER BY x"
         )
         assert len(df) == 2
@@ -1070,7 +1070,7 @@ class TestRewriteQueryCorrectness:
     def test_no_data_loss_all_columns_present(self):
         """All original columns and subquery-derived columns must appear in output."""
         s = self._store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT t, c, v, (SELECT MAX(c) FROM prices) AS peak FROM prices ORDER BY t"
         )
         assert df.columns == ["t", "c", "v", "peak"]
@@ -1082,7 +1082,7 @@ class TestRewriteQueryCorrectness:
     def test_order_by_preserved_after_rewrite(self):
         """ORDER BY must still sort correctly after rewriting."""
         s = self._store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT t, c, "
             "(SELECT MIN(c) FROM prices) AS floor "
             "FROM prices ORDER BY c DESC"
@@ -1094,7 +1094,7 @@ class TestRewriteQueryCorrectness:
         """DISTINCT must still deduplicate correctly."""
         s = DataFrameStore()
         s.store("t", [{"g": "a", "v": 1}, {"g": "a", "v": 2}, {"g": "b", "v": 3}])
-        df = s.query_df("SELECT DISTINCT g, (SELECT MAX(v) FROM t) AS max_v FROM t")
+        df = s.query_table("SELECT DISTINCT g, (SELECT MAX(v) FROM t) AS max_v FROM t")
         # Sort in Python to avoid conflating with the ORDER BY bug.
         df = df.sort("g")
         assert len(df) == 2
@@ -1114,7 +1114,7 @@ class TestRewriteQueryCorrectness:
                 {"t": 5, "c": 108.0, "ret": -0.01818},
             ],
         )
-        df = s.query_df(
+        df = s.query_table(
             "SELECT 'AAPL' AS ticker, "
             "(SELECT c FROM prices ORDER BY t ASC LIMIT 1) AS open_price, "
             "(SELECT c FROM prices ORDER BY t DESC LIMIT 1) AS close_price, "
@@ -1169,7 +1169,7 @@ class TestRewriteQueryCorrectness:
                 },
             ],
         )
-        df = s.query_df(
+        df = s.query_table(
             "SELECT "
             "MIN(l) AS btc_30d_low, "
             "MAX(h) AS btc_30d_high, "
@@ -1198,7 +1198,7 @@ class TestRewriteQueryCorrectness:
                 {"g": "b", "t": 3, "v": 40},
             ],
         )
-        df = s.query_df(
+        df = s.query_table(
             "SELECT g, "
             "MIN(CASE WHEN t = (SELECT MIN(t) FROM data) THEN v ELSE NULL END) AS first_v, "
             "SUM(v) AS total "
@@ -1237,7 +1237,7 @@ class TestRewriterRobustness:
     def test_sum_case_when_subquery(self):
         """SUM(CASE WHEN t = (SELECT ...) THEN v END) pattern."""
         s = self._ohlcv_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT "
             "SUM(CASE WHEN t = (SELECT MIN(t) FROM prices) THEN v ELSE 0 END) AS first_vol, "
             "SUM(CASE WHEN t = (SELECT MAX(t) FROM prices) THEN v ELSE 0 END) AS last_vol "
@@ -1249,7 +1249,7 @@ class TestRewriterRobustness:
     def test_avg_case_when_subquery(self):
         """AVG with CASE WHEN referencing a subquery comparison."""
         s = self._ohlcv_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT "
             "AVG(CASE WHEN t >= (SELECT MAX(t) FROM prices) - 1 THEN c ELSE NULL END) AS recent_avg "
             "FROM prices"
@@ -1260,7 +1260,7 @@ class TestRewriterRobustness:
     def test_count_case_when_subquery(self):
         """COUNT with CASE WHEN checking against a subquery value."""
         s = self._ohlcv_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT "
             "COUNT(CASE WHEN c > (SELECT AVG(c) FROM prices) THEN 1 ELSE NULL END) AS above_avg "
             "FROM prices"
@@ -1271,7 +1271,7 @@ class TestRewriterRobustness:
     def test_max_case_when_subquery(self):
         """MAX(CASE WHEN ...) with subquery — different aggregate than MIN."""
         s = self._ohlcv_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT "
             "MAX(CASE WHEN t = (SELECT MIN(t) FROM prices) THEN h ELSE NULL END) AS first_high "
             "FROM prices"
@@ -1281,7 +1281,7 @@ class TestRewriterRobustness:
     def test_case_without_else(self):
         """CASE WHEN ... THEN ... END (no ELSE) defaults to NULL."""
         s = self._ohlcv_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT "
             "MIN(CASE WHEN t = (SELECT MIN(t) FROM prices) THEN o END) AS first_o, "
             "MIN(CASE WHEN t = (SELECT MAX(t) FROM prices) THEN c END) AS last_c "
@@ -1293,7 +1293,7 @@ class TestRewriterRobustness:
     def test_arithmetic_combining_case_subqueries(self):
         """Arithmetic using multiple CASE+subquery results in one expression."""
         s = self._ohlcv_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT "
             "MIN(CASE WHEN t = (SELECT MAX(t) FROM prices) THEN c END) "
             "- MIN(CASE WHEN t = (SELECT MIN(t) FROM prices) THEN c END) AS price_change "
@@ -1306,7 +1306,7 @@ class TestRewriterRobustness:
     def test_mixed_standalone_and_case_subqueries(self):
         """Standalone scalar subquery + CASE-embedded subquery + aggregate."""
         s = self._ohlcv_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT "
             "(SELECT c FROM prices ORDER BY t ASC LIMIT 1) AS first_c, "
             "MIN(CASE WHEN t = (SELECT MIN(t) FROM prices) THEN o ELSE NULL END) AS first_o, "
@@ -1329,7 +1329,7 @@ class TestRewriterRobustness:
                 {"g": "b", "t": 3, "v": 40},
             ],
         )
-        df = s.query_df(
+        df = s.query_table(
             "SELECT g, "
             "(SELECT MAX(v) FROM data) AS global_max, "
             "MIN(CASE WHEN t = (SELECT MIN(t) FROM data) THEN v ELSE NULL END) AS first_v "
@@ -1344,7 +1344,7 @@ class TestRewriterRobustness:
     def test_non_aggregate_case_subquery(self):
         """SELECT t, CASE WHEN t = (subquery) ... — no aggregates."""
         s = self._ohlcv_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT t, "
             "CASE WHEN t = (SELECT MIN(t) FROM prices) THEN 'first' "
             "WHEN t = (SELECT MAX(t) FROM prices) THEN 'last' "
@@ -1357,7 +1357,7 @@ class TestRewriterRobustness:
     def test_non_aggregate_case_subquery_preserves_all_rows(self):
         """CROSS JOIN with single-row CTEs must not collapse rows."""
         s = self._ohlcv_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT t, c, "
             "c - (SELECT MIN(c) FROM prices) AS above_min "
             "FROM prices ORDER BY t"
@@ -1371,7 +1371,7 @@ class TestRewriterRobustness:
     def test_inline_path_preserves_order_by(self):
         """ORDER BY must still work after inline CROSS JOIN rewrite."""
         s = self._ohlcv_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT "
             "MIN(l) AS low, "
             "MAX(h) AS high, "
@@ -1385,7 +1385,7 @@ class TestRewriterRobustness:
     def test_inline_path_preserves_limit(self):
         """LIMIT must still work after inline CROSS JOIN rewrite."""
         s = self._ohlcv_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT "
             "MIN(l) AS low, "
             "MIN(CASE WHEN t = (SELECT MIN(t) FROM prices) THEN o END) AS first_o "
@@ -1408,7 +1408,7 @@ class TestRewriterRobustness:
                 {"region": "west", "amount": 400},
             ],
         )
-        df = s.query_df(
+        df = s.query_table(
             "SELECT region, SUM(amount) AS total, "
             "ROUND(SUM(amount) * 100.0 / (SELECT SUM(amount) FROM sales), 1) AS pct "
             "FROM sales GROUP BY region"
@@ -1420,7 +1420,7 @@ class TestRewriterRobustness:
     def test_ratio_to_global_max_per_row(self):
         """c / (SELECT MAX(c)) per row — ratio pattern."""
         s = self._ohlcv_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT t, "
             "ROUND(c * 100.0 / (SELECT MAX(c) FROM prices), 1) AS pct_of_max "
             "FROM prices ORDER BY t"
@@ -1439,7 +1439,7 @@ class TestRewriterRobustness:
         s = DataFrameStore()
         s.store("btc", [{"t": 1, "c": 50000.0}, {"t": 2, "c": 52000.0}])
         s.store("eth", [{"t": 1, "c": 3000.0}, {"t": 2, "c": 3200.0}])
-        df = s.query_df(
+        df = s.query_table(
             "SELECT "
             "MIN(CASE WHEN btc.t = (SELECT MIN(t) FROM btc) THEN btc.c END) AS btc_start, "
             "MIN(CASE WHEN btc.t = (SELECT MAX(t) FROM btc) THEN btc.c END) AS btc_end "
@@ -1453,7 +1453,7 @@ class TestRewriterRobustness:
         s = DataFrameStore()
         s.store("orders", [{"id": 1, "amount": 100}, {"id": 2, "amount": 200}])
         s.store("thresholds", [{"min_val": 150}])
-        df = s.query_df(
+        df = s.query_table(
             "SELECT "
             "COUNT(CASE WHEN amount > (SELECT min_val FROM thresholds LIMIT 1) "
             "THEN 1 END) AS above_threshold "
@@ -1467,7 +1467,7 @@ class TestRewriterRobustness:
         """COALESCE((SELECT ...), 0) — function wrapping subquery."""
         s = DataFrameStore()
         s.store("t", [{"x": 1}, {"x": 2}])
-        df = s.query_df(
+        df = s.query_table(
             "SELECT COALESCE((SELECT MIN(x) FROM t), 0) AS min_x, COUNT(*) AS n FROM t"
         )
         assert df["min_x"][0] == 1
@@ -1476,7 +1476,7 @@ class TestRewriterRobustness:
     def test_coalesce_with_case_subquery(self):
         """COALESCE wrapping a CASE+subquery expression inside an aggregate."""
         s = self._ohlcv_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT "
             "MIN(COALESCE(CASE WHEN t = (SELECT MIN(t) FROM prices) THEN o END, 0)) "
             "AS first_o "
@@ -1497,7 +1497,7 @@ class TestRewriterRobustness:
                 {"ts": 3, "val": 20.0},
             ],
         )
-        df = s.query_df(
+        df = s.query_table(
             "SELECT "
             "MIN(CASE WHEN ts = (SELECT MIN(ts) FROM t) THEN val END) AS first_val, "
             "MIN(CASE WHEN ts = (SELECT MAX(ts) FROM t) THEN val END) AS last_val "
@@ -1510,7 +1510,7 @@ class TestRewriterRobustness:
         """Subquery returning NULL must not crash the rewriter."""
         s = DataFrameStore()
         s.store("t", [{"x": None}, {"x": None}])
-        df = s.query_df(
+        df = s.query_table(
             "SELECT "
             "MIN(CASE WHEN x = (SELECT MIN(x) FROM t) THEN 1 ELSE 0 END) AS result "
             "FROM t"
@@ -1524,7 +1524,7 @@ class TestRewriterRobustness:
         """CASE+subquery on a single-row table."""
         s = DataFrameStore()
         s.store("t", [{"ts": 1, "o": 50.0, "c": 55.0}])
-        df = s.query_df(
+        df = s.query_table(
             "SELECT "
             "MIN(CASE WHEN ts = (SELECT MIN(ts) FROM t) THEN o END) AS start_p, "
             "MIN(CASE WHEN ts = (SELECT MAX(ts) FROM t) THEN c END) AS end_p "
@@ -1538,7 +1538,7 @@ class TestRewriterRobustness:
     def test_subquery_with_where_inside_case(self):
         """The subquery inside CASE has its own WHERE filter."""
         s = self._ohlcv_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT "
             "MIN(CASE WHEN t = (SELECT MIN(t) FROM prices WHERE c > 105) "
             "THEN c END) AS first_above_105 "
@@ -1552,7 +1552,7 @@ class TestRewriterRobustness:
     def test_same_subquery_used_multiple_times(self):
         """The same subquery value appears in multiple CASE expressions."""
         s = self._ohlcv_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT "
             "MIN(CASE WHEN t = (SELECT MIN(t) FROM prices) THEN o END) AS first_o, "
             "MIN(CASE WHEN t = (SELECT MIN(t) FROM prices) THEN c END) AS first_c, "
@@ -1600,7 +1600,7 @@ class TestRewriterRobustness:
                 },
             ],
         )
-        df = s.query_df(
+        df = s.query_table(
             "SELECT "
             "MIN(l) AS btc_30d_low, "
             "MAX(h) AS btc_30d_high, "
@@ -1638,7 +1638,7 @@ class TestRewriterRobustness:
             )
         for asset in ["btc", "eth", "sol"]:
             tbl = f"{asset}_30d"
-            df = s.query_df(
+            df = s.query_table(
                 f"SELECT "
                 f"MIN(l) AS low, MAX(h) AS high, "
                 f"MIN(CASE WHEN t = (SELECT MIN(t) FROM {tbl}) THEN o ELSE NULL END) AS start_price, "
@@ -1656,7 +1656,7 @@ class TestRewriterRobustness:
     def test_financial_return_with_case_extraction(self):
         """Calculate return using CASE WHEN to extract first/last close."""
         s = self._ohlcv_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT "
             "MIN(CASE WHEN t = (SELECT MIN(t) FROM prices) THEN c END) AS start_c, "
             "MIN(CASE WHEN t = (SELECT MAX(t) FROM prices) THEN c END) AS end_c, "
@@ -1674,7 +1674,7 @@ class TestRewriterRobustness:
     def test_case_subquery_with_string_literal_and_aggregates(self):
         """String literals + CASE+subquery + aggregates — a common LLM pattern."""
         s = self._ohlcv_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT 'AAPL' AS ticker, '5D' AS period, "
             "MIN(CASE WHEN t = (SELECT MIN(t) FROM prices) THEN o END) AS open_price, "
             "MIN(CASE WHEN t = (SELECT MAX(t) FROM prices) THEN c END) AS close_price, "
@@ -1694,7 +1694,7 @@ class TestRewriterRobustness:
     def test_case_subquery_with_where_on_main_query(self):
         """WHERE clause on the main query combined with CASE+subquery."""
         s = self._ohlcv_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT "
             "COUNT(*) AS n, "
             "MIN(CASE WHEN t = (SELECT MIN(t) FROM prices WHERE t >= 3) THEN c END) AS start_c "
@@ -1708,7 +1708,7 @@ class TestRewriterRobustness:
     def test_case_subquery_in_cte_body(self):
         """CASE+subquery inside a CTE body, then queried from outer SELECT."""
         s = self._ohlcv_store()
-        df = s.query_df(
+        df = s.query_table(
             "WITH stats AS ("
             " SELECT "
             " MIN(CASE WHEN t = (SELECT MIN(t) FROM prices) THEN o END) AS start_price,"
@@ -1729,7 +1729,7 @@ class TestRewriterRobustness:
     def test_sum_not_inflated_with_case_subquery(self):
         """SUM must not be multiplied by CROSS JOIN with CTEs."""
         s = self._ohlcv_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT SUM(v) AS total_vol, "
             "MIN(CASE WHEN t = (SELECT MIN(t) FROM prices) THEN o END) AS first_o "
             "FROM prices"
@@ -1740,7 +1740,7 @@ class TestRewriterRobustness:
     def test_count_not_inflated_with_case_subquery(self):
         """COUNT must still reflect actual row count."""
         s = self._ohlcv_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT COUNT(*) AS n, "
             "MIN(CASE WHEN t = (SELECT MIN(t) FROM prices) THEN o END) AS first_o, "
             "MIN(CASE WHEN t = (SELECT MAX(t) FROM prices) THEN c END) AS last_c "
@@ -1753,7 +1753,7 @@ class TestRewriterRobustness:
     def test_avg_not_affected_with_case_subquery(self):
         """AVG must not be skewed by the rewrite."""
         s = self._ohlcv_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT AVG(c) AS avg_c, "
             "MIN(CASE WHEN t = (SELECT MIN(t) FROM prices) THEN c END) AS first_c "
             "FROM prices"
@@ -1789,7 +1789,7 @@ class TestSQLFeatureCoverage:
 
     def test_row_number(self):
         s = self._make_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT name, salary, ROW_NUMBER() OVER (ORDER BY salary DESC) AS rn "
             "FROM employees"
         )
@@ -1809,7 +1809,7 @@ class TestSQLFeatureCoverage:
                 {"name": "D", "score": 80},
             ],
         )
-        df = s.query_df(
+        df = s.query_table(
             "SELECT name, score, "
             "RANK() OVER (ORDER BY score DESC) AS rnk, "
             "DENSE_RANK() OVER (ORDER BY score DESC) AS drnk "
@@ -1821,7 +1821,7 @@ class TestSQLFeatureCoverage:
     def test_lag_lead(self):
         s = DataFrameStore()
         s.store("ts", [{"t": 1, "v": 10}, {"t": 2, "v": 20}, {"t": 3, "v": 15}])
-        df = s.query_df(
+        df = s.query_table(
             "SELECT t, v, "
             "LAG(v) OVER (ORDER BY t) AS prev_v, "
             "LEAD(v) OVER (ORDER BY t) AS next_v "
@@ -1835,7 +1835,7 @@ class TestSQLFeatureCoverage:
     def test_running_total(self):
         s = DataFrameStore()
         s.store("ts", [{"t": 1, "v": 10}, {"t": 2, "v": 20}, {"t": 3, "v": 30}])
-        df = s.query_df(
+        df = s.query_table(
             "SELECT t, v, "
             "SUM(v) OVER (ORDER BY t ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running "
             "FROM ts ORDER BY t"
@@ -1844,7 +1844,7 @@ class TestSQLFeatureCoverage:
 
     def test_partition_by(self):
         s = self._make_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT name, dept, salary, "
             "SUM(salary) OVER (PARTITION BY dept) AS dept_total "
             "FROM employees ORDER BY name"
@@ -1854,7 +1854,7 @@ class TestSQLFeatureCoverage:
 
     def test_ntile(self):
         s = self._make_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT name, salary, NTILE(3) OVER (ORDER BY salary) AS bucket "
             "FROM employees ORDER BY salary"
         )
@@ -1868,13 +1868,13 @@ class TestSQLFeatureCoverage:
     def test_ilike(self):
         """ILIKE is preprocessed to LIKE (SQLite LIKE is case-insensitive for ASCII)."""
         s = self._make_store()
-        df = s.query_df("SELECT name FROM employees WHERE name ILIKE '%ali%'")
+        df = s.query_table("SELECT name FROM employees WHERE name ILIKE '%ali%'")
         assert len(df) == 1
         assert df["name"][0] == "Alice"
 
     def test_like(self):
         s = self._make_store()
-        df = s.query_df("SELECT name FROM employees WHERE name LIKE 'B%'")
+        df = s.query_table("SELECT name FROM employees WHERE name LIKE 'B%'")
         assert len(df) == 1
         assert df["name"][0] == "Bob"
 
@@ -1884,23 +1884,23 @@ class TestSQLFeatureCoverage:
         s = DataFrameStore()
         s.store("a", [{"x": 1}, {"x": 2}])
         s.store("b", [{"x": 2}, {"x": 3}])
-        df = s.query_df("SELECT x FROM a UNION ALL SELECT x FROM b ORDER BY x")
+        df = s.query_table("SELECT x FROM a UNION ALL SELECT x FROM b ORDER BY x")
         assert df["x"] == [1, 2, 2, 3]
 
     def test_union_dedup(self):
         s = DataFrameStore()
         s.store("a", [{"x": 1}, {"x": 2}])
         s.store("b", [{"x": 2}, {"x": 3}])
-        df = s.query_df("SELECT x FROM a UNION SELECT x FROM b ORDER BY x")
+        df = s.query_table("SELECT x FROM a UNION SELECT x FROM b ORDER BY x")
         assert df["x"] == [1, 2, 3]
 
     def test_except_intersect(self):
         s = DataFrameStore()
         s.store("a", [{"x": 1}, {"x": 2}, {"x": 3}])
         s.store("b", [{"x": 2}, {"x": 3}, {"x": 4}])
-        df_except = s.query_df("SELECT x FROM a EXCEPT SELECT x FROM b")
+        df_except = s.query_table("SELECT x FROM a EXCEPT SELECT x FROM b")
         assert df_except["x"] == [1]
-        df_intersect = s.query_df(
+        df_intersect = s.query_table(
             "SELECT x FROM a INTERSECT SELECT x FROM b ORDER BY x"
         )
         assert df_intersect["x"] == [2, 3]
@@ -1911,7 +1911,7 @@ class TestSQLFeatureCoverage:
         s = DataFrameStore()
         s.store("orders", [{"id": 1, "cust": "A"}, {"id": 2, "cust": "B"}])
         s.store("payments", [{"order_id": 1, "amount": 50}])
-        df = s.query_df(
+        df = s.query_table(
             "SELECT o.id, o.cust, p.amount "
             "FROM orders o LEFT JOIN payments p ON o.id = p.order_id "
             "ORDER BY o.id"
@@ -1924,7 +1924,7 @@ class TestSQLFeatureCoverage:
         s = DataFrameStore()
         s.store("a", [{"k": 1, "va": 10}, {"k": 2, "va": 20}])
         s.store("b", [{"k": 2, "vb": 200}, {"k": 3, "vb": 300}])
-        df = s.query_df(
+        df = s.query_table(
             "SELECT a.k AS ak, b.k AS bk, va, vb "
             "FROM a FULL OUTER JOIN b ON a.k = b.k "
             "ORDER BY COALESCE(a.k, b.k)"
@@ -1953,7 +1953,7 @@ class TestSQLFeatureCoverage:
                 {"pid": 101, "pname": "Gadget"},
             ],
         )
-        df = s.query_df(
+        df = s.query_table(
             "SELECT c.name, p.pname "
             "FROM customers c "
             "JOIN orders o ON c.cid = o.cid "
@@ -1968,7 +1968,7 @@ class TestSQLFeatureCoverage:
 
     def test_having(self):
         s = self._make_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT dept, SUM(salary) AS total "
             "FROM employees GROUP BY dept HAVING SUM(salary) > 300"
         )
@@ -1982,7 +1982,7 @@ class TestSQLFeatureCoverage:
         s = DataFrameStore()
         s.store("orders", [{"id": 1, "cust": "A"}, {"id": 2, "cust": "B"}])
         s.store("payments", [{"order_id": 1, "amount": 50}])
-        df = s.query_df(
+        df = s.query_table(
             "SELECT id, cust FROM orders o "
             "WHERE EXISTS (SELECT 1 FROM payments p WHERE p.order_id = o.id)"
         )
@@ -1993,7 +1993,7 @@ class TestSQLFeatureCoverage:
         s = DataFrameStore()
         s.store("orders", [{"id": 1, "cust": "A"}, {"id": 2, "cust": "B"}])
         s.store("payments", [{"order_id": 1, "amount": 50}])
-        df = s.query_df(
+        df = s.query_table(
             "SELECT id, cust FROM orders o "
             "WHERE NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = o.id)"
         )
@@ -2004,14 +2004,14 @@ class TestSQLFeatureCoverage:
 
     def test_between(self):
         s = self._make_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT name FROM employees WHERE salary BETWEEN 100 AND 120 ORDER BY name"
         )
         assert df["name"] == ["Alice", "Bob", "Dave"]
 
     def test_in_literal_list(self):
         s = self._make_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT name FROM employees WHERE salary IN (90, 130) ORDER BY name"
         )
         assert df["name"] == ["Carol", "Eve"]
@@ -2022,7 +2022,7 @@ class TestSQLFeatureCoverage:
         """CAST AS VARCHAR/DOUBLE are preprocessed to TEXT/REAL."""
         s = DataFrameStore()
         s.store("t", [{"x": 42}])
-        df = s.query_df(
+        df = s.query_table(
             "SELECT CAST(x AS VARCHAR) AS xs, CAST(x AS DOUBLE) AS xd FROM t"
         )
         assert df["xs"][0] == "42"
@@ -2033,7 +2033,7 @@ class TestSQLFeatureCoverage:
     def test_string_functions(self):
         s = DataFrameStore()
         s.store("t", [{"s": "Hello"}])
-        df = s.query_df(
+        df = s.query_table(
             "SELECT UPPER(s) AS u, LOWER(s) AS l, "
             "CONCAT(s, ' World') AS c, LENGTH(s) AS n FROM t"
         )
@@ -2046,7 +2046,7 @@ class TestSQLFeatureCoverage:
 
     def test_chained_ctes(self):
         s = self._make_store()
-        df = s.query_df(
+        df = s.query_table(
             "WITH eng AS ("
             "  SELECT name, salary FROM employees WHERE dept = 'eng'"
             "), ranked AS ("
@@ -2062,17 +2062,29 @@ class TestSQLFeatureCoverage:
     def test_filter_clause_via_preprocessor(self):
         """COUNT(*) FILTER (WHERE ...) is preprocessed to SUM(CASE WHEN ...)."""
         s = self._make_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT COUNT(*) FILTER (WHERE dept = 'eng') AS eng_count, "
             "COUNT(*) AS total FROM employees"
         )
         assert df["eng_count"][0] == 3
         assert df["total"][0] == 5
 
+    def test_filter_clause_nested_parens(self):
+        """COUNT(*) FILTER with nested parentheses in the condition."""
+        s = self._make_store()
+        df = s.query_table(
+            "SELECT COUNT(*) FILTER (WHERE (salary > 100 OR dept = 'sales')) AS cnt "
+            "FROM employees"
+        )
+        # salary > 100: Bob(120), Dave(110), Eve(130) = 3
+        # dept = 'sales': Carol(90), Dave(110) = 2
+        # union: Bob, Carol, Dave, Eve = 4
+        assert df["cnt"][0] == 4
+
     def test_group_concat(self):
         """GROUP_CONCAT replaces STRING_AGG (via preprocessor)."""
         s = self._make_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT dept, STRING_AGG(name, ', ' ORDER BY name) AS names "
             "FROM employees GROUP BY dept ORDER BY dept"
         )
@@ -2086,7 +2098,7 @@ class TestSQLFeatureCoverage:
     def test_top_n_per_group_via_cte(self):
         """Top-N per group using CTE + ROW_NUMBER (replaces QUALIFY test)."""
         s = self._make_store()
-        df = s.query_df(
+        df = s.query_table(
             "WITH ranked AS ("
             "  SELECT name, dept, salary, "
             "  ROW_NUMBER() OVER (PARTITION BY dept ORDER BY salary DESC) AS rn "
@@ -2100,7 +2112,7 @@ class TestSQLFeatureCoverage:
 
     def test_limit_offset(self):
         s = self._make_store()
-        df = s.query_df("SELECT name FROM employees ORDER BY hired LIMIT 2 OFFSET 2")
+        df = s.query_table("SELECT name FROM employees ORDER BY hired LIMIT 2 OFFSET 2")
         assert len(df) == 2
         assert df["name"] == ["Carol", "Dave"]
 
@@ -2108,7 +2120,7 @@ class TestSQLFeatureCoverage:
 
     def test_or_conditions(self):
         s = self._make_store()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT name FROM employees WHERE salary > 125 OR salary < 95 ORDER BY name"
         )
         assert df["name"] == ["Carol", "Eve"]
@@ -2127,7 +2139,7 @@ class TestSQLFeatureCoverage:
                 {"t": 5, "v": 50},
             ],
         )
-        df = s.query_df(
+        df = s.query_table(
             "WITH windowed AS ("
             "  SELECT t, v, "
             "  AVG(v) OVER (ORDER BY t ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS ma "
@@ -2142,7 +2154,7 @@ class TestSQLFeatureCoverage:
 
     def test_top_n_per_group(self):
         s = self._make_store()
-        df = s.query_df(
+        df = s.query_table(
             "WITH ranked AS ("
             "  SELECT name, dept, salary, "
             "  ROW_NUMBER() OVER (PARTITION BY dept ORDER BY salary DESC) AS rn "
@@ -2247,7 +2259,7 @@ class TestSQLSecurityValidation:
     def test_cte_references_not_rejected_as_unregistered(self):
         """CTE-defined names must not trigger the table allowlist check."""
         s = self._store_with_data()
-        df = s.query_df(
+        df = s.query_table(
             "WITH doubled AS (SELECT x * 2 AS x2 FROM t) "
             "SELECT x2 FROM doubled ORDER BY x2"
         )
@@ -2258,19 +2270,19 @@ class TestSQLSecurityValidation:
     def test_trailing_semicolon_allowed(self):
         """Trailing semicolon is stripped by validation."""
         s = self._store_with_data()
-        df = s.query_df("SELECT x FROM t;")
+        df = s.query_table("SELECT x FROM t;")
         assert len(df) == 2
 
     def test_semicolons_in_string_literals_allowed(self):
         """Semicolons inside string literals must not be treated as statement separators."""
         s = self._store_with_data()
-        df = s.query_df("SELECT 'hello;world' AS label FROM t")
+        df = s.query_table("SELECT 'hello;world' AS label FROM t")
         assert df["label"][0] == "hello;world"
 
     def test_standard_functions_still_allowed(self):
         """Common SQL functions (avg, count, sum, etc.) must not be blocked."""
         s = self._store_with_data()
-        df = s.query_df(
+        df = s.query_table(
             "SELECT COUNT(*) AS cnt, SUM(x) AS total, AVG(x) AS avg_x FROM t"
         )
         assert df["cnt"][0] == 2
@@ -2348,13 +2360,13 @@ class TestSQLSecurityValidation:
     def test_keywords_in_string_literals_not_blocked(self):
         """SQL keywords inside string literals must not trigger rejection."""
         s = self._store_with_data()
-        df = s.query_df("SELECT 'DROP TABLE t; DELETE FROM t' AS val FROM t")
+        df = s.query_table("SELECT 'DROP TABLE t; DELETE FROM t' AS val FROM t")
         assert df["val"][0] == "DROP TABLE t; DELETE FROM t"
 
     def test_keywords_in_column_aliases_not_blocked(self):
         """Column aliases that look like keywords must not trigger rejection."""
         s = self._store_with_data()
-        df = s.query_df("SELECT x AS delete_count FROM t")
+        df = s.query_table("SELECT x AS delete_count FROM t")
         assert df["delete_count"] == [1, 2]
 
     # ---- Subquery table references in various positions ----
@@ -2384,7 +2396,7 @@ class TestSQLSecurityValidation:
         s = self._store_with_data()
         # The CTE itself references t (allowed), so this should work —
         # the CTE name 'sqlite_master' just shadows, not accesses, the real one.
-        df = s.query_df(
+        df = s.query_table(
             "WITH sqlite_master AS (SELECT x FROM t) SELECT * FROM sqlite_master"
         )
         assert df["x"] == [1, 2]
@@ -2434,14 +2446,14 @@ class TestSQLiteDefenseInDepth:
         ):
             return store.query(sql)
 
-    def _query_df_bypassing_sqlglot(self, store, sql):
-        """Run a query_df with sqlglot validation disabled."""
+    def _query_table_bypassing_sqlglot(self, store, sql):
+        """Run a query_table with sqlglot validation disabled."""
         with patch.object(
             DataFrameStore,
             "_validate_sql",
             return_value=sql.strip().rstrip(";").strip(),
         ):
-            return store.query_df(sql)
+            return store.query_table(sql)
 
     # ---- Authorizer blocks write statements ----
 
@@ -2486,13 +2498,13 @@ class TestSQLiteDefenseInDepth:
     def test_select_still_works(self):
         """Normal SELECT queries work with all safeguards active."""
         s = self._store_with_data()
-        result = self._query_df_bypassing_sqlglot(s, "SELECT x FROM t ORDER BY x")
+        result = self._query_table_bypassing_sqlglot(s, "SELECT x FROM t ORDER BY x")
         assert result["x"] == [1, 2]
 
     def test_aggregate_functions_work(self):
         """Aggregate functions in the allowlist work through the authorizer."""
         s = self._store_with_data()
-        result = self._query_df_bypassing_sqlglot(
+        result = self._query_table_bypassing_sqlglot(
             s, "SELECT COUNT(*) AS cnt, SUM(x) AS total FROM t"
         )
         assert result["cnt"][0] == 2
@@ -2501,11 +2513,11 @@ class TestSQLiteDefenseInDepth:
     def test_custom_functions_work(self):
         """Custom registered functions (SQRT, etc.) work through the authorizer."""
         s = self._store_with_data()
-        result = self._query_df_bypassing_sqlglot(
+        result = self._query_table_bypassing_sqlglot(
             s, "SELECT SQRT(x) AS root FROM t WHERE x = 4"
         )
         # x=4 doesn't exist; test with existing data
-        result = self._query_df_bypassing_sqlglot(
+        result = self._query_table_bypassing_sqlglot(
             s, "SELECT POWER(x, 2) AS sq FROM t ORDER BY x"
         )
         assert result["sq"] == [1.0, 4.0]
@@ -2513,7 +2525,7 @@ class TestSQLiteDefenseInDepth:
     def test_window_functions_work(self):
         """Window functions work through the authorizer."""
         s = self._store_with_data()
-        result = self._query_df_bypassing_sqlglot(
+        result = self._query_table_bypassing_sqlglot(
             s, "SELECT x, ROW_NUMBER() OVER (ORDER BY x) AS rn FROM t"
         )
         assert result["rn"] == [1, 2]
@@ -2539,7 +2551,7 @@ class TestReservedTableNames:
         "name",
         ["sqlite_master", "sqlite_sequence"],
     )
-    def test_cannot_store_dataframe_reserved_name(self, name):
+    def test_cannot_store_table_reserved_name(self, name):
         s = DataFrameStore()
         with pytest.raises(ValueError, match="reserved"):
             s.store_table(name, Table(["x"], {"x": [1]}))
@@ -2560,7 +2572,7 @@ class TestQueryTimeout:
     def test_fast_query_succeeds(self):
         s = DataFrameStore()
         s.store("t", [{"x": i} for i in range(10)])
-        df = s.query_df("SELECT SUM(x) AS total FROM t")
+        df = s.query_table("SELECT SUM(x) AS total FROM t")
         assert df["total"][0] == 45
 
     def test_timeout_raises(self):

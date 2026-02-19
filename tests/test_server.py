@@ -564,17 +564,17 @@ class TestConfigureCredentials:
         assert _get_base_url() == "https://test.example.com"
 
     def test_all_env_cleared_after_startup(self):
-        """Verify that os.environ.clear() in main() removes all env vars."""
-        # Simulate: set some env vars, call clear, verify they're gone
-        os.environ["MASSIVE_API_KEY"] = "key123"
-        os.environ["AWS_SECRET_ACCESS_KEY"] = "aws-secret"
-        os.environ["SOME_OTHER_VAR"] = "value"
+        """Verify that clearing the environment removes all env vars."""
+        with patch.dict(os.environ, {}, clear=True):
+            os.environ["MASSIVE_API_KEY"] = "key123"
+            os.environ["AWS_SECRET_ACCESS_KEY"] = "aws-secret"
+            os.environ["SOME_OTHER_VAR"] = "value"
 
-        os.environ.clear()
+            os.environ.clear()
 
-        assert os.environ.get("MASSIVE_API_KEY") is None
-        assert os.environ.get("AWS_SECRET_ACCESS_KEY") is None
-        assert os.environ.get("SOME_OTHER_VAR") is None
+            assert os.environ.get("MASSIVE_API_KEY") is None
+            assert os.environ.get("AWS_SECRET_ACCESS_KEY") is None
+            assert os.environ.get("SOME_OTHER_VAR") is None
 
 
 class TestResponseSizeLimit:
