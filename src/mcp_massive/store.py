@@ -336,6 +336,32 @@ def _register_custom_functions(conn: sqlite3.Connection) -> None:
     conn.create_aggregate("STDDEV_SAMP", 1, cast(Any, _StddevAggregate))
 
 
+def _rewrite_count_filter(tree: exp.Expression) -> exp.Expression:
+    """Rewrite COUNT(*) FILTER (WHERE cond) to SUM(CASE WHEN cond THEN 1 ELSE 0 END).
+
+    Uses sqlglot AST traversal so it handles arbitrarily nested conditions
+    (e.g. WHERE (a > 1 OR b < 2)) that a regex would break on.
+    """
+    for node in tree.find_all(exp.Filter):
+        # Only rewrite COUNT(*) FILTER — leave other aggregates alone
+        agg = node.this
+        if not isinstance(agg, exp.Count):
+            continue
+        where_clause = node.expression
+        # exp.Filter wraps a Where node whose .this is the actual condition
+        condition = (
+            where_clause.this if isinstance(where_clause, exp.Where) else where_clause
+        )
+        replacement = exp.Sum(
+            this=exp.Case(
+                ifs=[exp.If(this=condition, true=exp.Literal.number(1))],
+                default=exp.Literal.number(0),
+            )
+        )
+        node.replace(replacement)
+    return tree
+
+
 def _preprocess_sql(sql: str) -> str:
     """Normalize common SQL dialect differences to SQLite-compatible syntax."""
     # ILIKE -> LIKE (SQLite LIKE is case-insensitive for ASCII by default)
@@ -357,12 +383,13 @@ def _preprocess_sql(sql: str) -> str:
     # ANY_VALUE(x) -> MIN(x) — both return an arbitrary value from the group
     sql = re.sub(r"\bANY_VALUE\s*\(", "MIN(", sql, flags=re.IGNORECASE)
     # COUNT(*) FILTER (WHERE cond) -> SUM(CASE WHEN cond THEN 1 ELSE 0 END)
-    sql = re.sub(
-        r"\bCOUNT\s*\(\s*\*\s*\)\s*FILTER\s*\(\s*WHERE\s+(.+?)\)",
-        r"SUM(CASE WHEN \1 THEN 1 ELSE 0 END)",
-        sql,
-        flags=re.IGNORECASE,
-    )
+    # Uses AST rewrite via sqlglot to handle nested parentheses correctly.
+    try:
+        tree = sqlglot.parse_one(sql, dialect="sqlite")
+        tree = _rewrite_count_filter(tree)
+        sql = tree.sql(dialect="sqlite")
+    except sqlglot.errors.ParseError:
+        pass  # fall through with original SQL; _validate_sql will catch errors
     return sql
 
 
@@ -523,9 +550,6 @@ class DataFrameStore:
         table, _ts = self._tables[name]
         return table
 
-    # Keep old name as alias for backward compatibility during transition
-    get_dataframe = get_table
-
     def store_table(self, name: str, table: Table) -> StoreSummary:
         """Store an existing Table under the given name.
 
@@ -576,9 +600,6 @@ class DataFrameStore:
             preview=preview_csv,
         )
 
-    # Keep old name as alias for backward compatibility during transition
-    store_dataframe = store_table
-
     def query_table(self, sql: str) -> Table:
         """Execute a SQL SELECT query and return the result as a Table.
 
@@ -589,9 +610,6 @@ class DataFrameStore:
             Table of the query result.
         """
         return self._execute_sql(sql)
-
-    # Keep old name as alias for backward compatibility during transition
-    query_df = query_table
 
     @staticmethod
     def _check_duplicate_columns(table: Table) -> None:
