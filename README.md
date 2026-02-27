@@ -57,7 +57,7 @@ The server dynamically indexes all Massive.com API endpoints at startup from [`l
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.12+
 - A Massive.com API key <br> [![Button]][Link]
 - [Astral UV](https://docs.astral.sh/uv/getting-started/installation/) (v0.4.0+)
 
@@ -72,7 +72,7 @@ Install the MCP server, then register it with Claude Code:
 
 ```bash
 # Install the server (one-time — downloads dependencies ahead of time)
-uv tool install "mcp_massive @ git+https://github.com/massive-com/mcp_massive@v0.8.1"
+uv tool install "mcp_massive @ git+https://github.com/massive-com/mcp_massive@v0.8.2"
 
 # Register with Claude Code
 claude mcp add massive -e MASSIVE_API_KEY=your_api_key_here -- mcp_massive
@@ -102,7 +102,7 @@ You can also run `claude mcp add-from-claude-desktop` if the MCP server is insta
 1. Install the server:
 
 ```bash
-uv tool install "mcp_massive @ git+https://github.com/massive-com/mcp_massive@v0.8.1"
+uv tool install "mcp_massive @ git+https://github.com/massive-com/mcp_massive@v0.8.2"
 ```
 
 3. Find the installed binary path:

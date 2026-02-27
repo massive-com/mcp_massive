@@ -1,9 +1,9 @@
 [project]
 name = "mcp_massive"
-version = "0.8.1"
+version = "0.8.2"
 description = "A MCP server project"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "mcp>=1.26.0",
     "httpx>=0.28.0",
