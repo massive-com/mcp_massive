@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "mcp_massive",
   "display_name": "Massive Market Data",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "Stocks, options & indices market data via Massive.com financial data API. Access real-time and historical prices, quotes, trades, and aggregates for equities, options contracts, ETFs, FX, crypto, and more.",
   "author": {
     "name": "Massive",
@@ -70,7 +70,7 @@
       "linux"
     ],
     "runtimes": {
-      "python": ">=3.10"
+      "python": ">=3.12"
     }
   },
   "tools": [
