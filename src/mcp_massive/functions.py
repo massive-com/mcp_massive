@@ -377,9 +377,15 @@ def _rolling_mean(arr: np.ndarray, window: int) -> np.ndarray:
 
 
 def _rolling_std(arr: np.ndarray, window: int) -> np.ndarray:
-    """Compute rolling sample standard deviation with NaN padding."""
+    """Compute rolling sample standard deviation with NaN padding.
+
+    Uses sample std (ddof=1), so windows smaller than 2 are undefined and
+    return all-NaN without invoking numpy std (avoids runtime warnings).
+    """
     n = len(arr)
     result = np.full(n, np.nan)
+    if window < 2:
+        return result
     for i in range(window - 1, n):
         window_data = arr[i - window + 1 : i + 1]
         if np.any(np.isnan(window_data)):
