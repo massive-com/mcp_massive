@@ -303,7 +303,7 @@ wheels = [
 
 [[package]]
 name = "mcp-massive"
-version = "0.8.3"
+version = "1.0.3"
 source = { editable = "." }
 dependencies = [
     { name = "bm25s" },
