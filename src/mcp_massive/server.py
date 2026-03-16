@@ -492,9 +492,8 @@ def run(transport: Literal["stdio", "sse", "streamable-http"] = "stdio") -> None
     except RuntimeError:
         loop = None
 
-    if loop is not None and loop.is_running():
-        # Already inside an event loop – run the async server in a
-        # dedicated thread with its own event loop.
+    def _run_in_new_thread() -> None:
+        """Run the async server in a dedicated thread with its own event loop."""
         if transport == "stdio":
             coro_fn = mass_mcp.run_stdio_async
         elif transport == "sse":
@@ -506,17 +505,36 @@ def run(transport: Literal["stdio", "sse", "streamable-http"] = "stdio") -> None
 
         exception: BaseException | None = None
 
-        def _run_in_thread() -> None:
+        def _target() -> None:
             nonlocal exception
             try:
                 asyncio.run(coro_fn())
             except BaseException as exc:
                 exception = exc
 
-        t = threading.Thread(target=_run_in_thread, daemon=True)
+        t = threading.Thread(target=_target, daemon=True)
         t.start()
         t.join()
         if exception is not None:
             raise exception
+
+    if loop is not None and loop.is_running():
+        # Already inside an event loop – run the async server in a
+        # dedicated thread with its own event loop.
+        _run_in_new_thread()
     else:
-        mass_mcp.run(transport)
+        try:
+            mass_mcp.run(transport)
+        except RuntimeError as exc:
+            if "running" in str(exc).lower() and "asyncio" in str(exc).lower():
+                # asyncio.get_running_loop() missed the loop (e.g. AWS Lambda,
+                # Prefect, or other frameworks where the loop exists but isn't
+                # detected from a synchronous call site).  Fall back to the
+                # threaded approach.
+                logger.debug(
+                    "Detected nested event loop after mass_mcp.run() failed; "
+                    "retrying in a dedicated thread."
+                )
+                _run_in_new_thread()
+            else:
+                raise
