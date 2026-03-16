@@ -331,13 +331,14 @@ async def call_api(
         return "Error [AUTH]: MASSIVE_API_KEY is not set."
 
     url = f"{_get_base_url()}{path}"
+    client = _get_http_client()
+    base_ua = client.headers.get("user-agent", "")
     headers = {
         "Authorization": f"Bearer {effective_key}",
-        "User-Agent": version_number,
+        "User-Agent": f"{base_ua} {version_number}".strip(),
     }
 
     try:
-        client = _get_http_client()
         resp = await client.get(url, params=params, headers=headers)
         resp.raise_for_status()
         raw_ct = resp.headers.get("content-type")
