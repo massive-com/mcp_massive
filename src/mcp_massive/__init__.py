@@ -27,17 +27,6 @@ def main() -> None:
         default=None,
         help="Transport protocol (default: stdio). Overrides MCP_TRANSPORT env var.",
     )
-    parser.add_argument(
-        "--host",
-        default=None,
-        help="Host to bind to for HTTP transports (default: 0.0.0.0). Overrides MCP_HOST env var.",
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=None,
-        help="Port to bind to for HTTP transports (default: 8000). Overrides MCP_PORT env var.",
-    )
     args = parser.parse_args()
 
     # CLI arg takes precedence over env var; default to stdio
@@ -85,13 +74,9 @@ def main() -> None:
     if os.environ.get("MASSIVE_MAX_ROWS"):
         max_rows = int(os.environ["MASSIVE_MAX_ROWS"])
 
-    # Resolve host/port — CLI arg > env var > default
-    host = args.host or os.environ.get("MCP_HOST", "0.0.0.0")
-    port = args.port or int(os.environ.get("MCP_PORT", "8000"))
-
     # Defer importing server until after env vars are read — this triggers
     # loading numpy, bm25s, and other heavy deps.
-    from .server import run, configure_credentials, configure_server
+    from .server import run, configure_credentials
 
     configure_credentials(
         massive_api_key,
@@ -100,8 +85,6 @@ def main() -> None:
         max_tables=max_tables,
         max_rows=max_rows,
     )
-
-    configure_server(host=host, port=port)
 
     # SECURITY: Clear ALL environment variables from this process so that no
     # secrets (API keys, AWS credentials, etc.) can be exfiltrated via
