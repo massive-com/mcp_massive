@@ -1,7 +1,7 @@
 [project]
 name = "mcp_massive"
-version = "0.8.3"
-description = "A MCP server project"
+version = "1.0.3"
+description = "Stocks, options & indices market data via Massive.com financial data API"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -14,9 +14,16 @@ dependencies = [
     "pydantic>=2.12.0",
     "sqlglot>=28.10.0",
 ]
+license = "MIT"
+keywords = ["finance", "market-data", "stocks", "forex", "crypto", "options", "mcp"]
 [[project.authors]]
 name = "Massive"
 email = "support@massive.com"
+
+[project.urls]
+Homepage = "https://massive.com"
+Repository = "https://github.com/massive-com/mcp_massive"
+Issues = "https://github.com/massive-com/mcp_massive/issues"
 
 [build-system]
 requires = [ "hatchling",]

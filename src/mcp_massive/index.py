@@ -1,5 +1,4 @@
 import asyncio
-import os
 import re
 import logging
 from typing import Any
@@ -406,7 +405,7 @@ async def _fetch_doc(
 
 async def build_index(llms_txt_url: str | None = None) -> EndpointIndex:
     if llms_txt_url is None:
-        llms_txt_url = os.environ.get("MASSIVE_LLMS_TXT_URL", _DEFAULT_LLMS_TXT_URL)
+        llms_txt_url = _DEFAULT_LLMS_TXT_URL
     logger.info("Building endpoint index from llms.txt...")
 
     async with httpx.AsyncClient(timeout=30.0) as client:
