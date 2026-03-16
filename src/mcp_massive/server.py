@@ -478,5 +478,45 @@ def run(transport: Literal["stdio", "sse", "streamable-http"] = "stdio") -> None
     ``_get_index()``) so the MCP protocol can start responding to
     ``initialize`` immediately without waiting for all doc pages to be
     fetched.
+
+    If an asyncio event loop is already running (e.g. inside Prefect,
+    AWS Lambda, Jupyter, or similar frameworks), we run the server in a
+    new thread with its own event loop to avoid the
+    ``RuntimeError: Already running asyncio in this thread`` that
+    ``anyio.run()`` would otherwise raise.
     """
-    mass_mcp.run(transport)
+    import asyncio
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop is not None and loop.is_running():
+        # Already inside an event loop – run the async server in a
+        # dedicated thread with its own event loop.
+        if transport == "stdio":
+            coro_fn = mass_mcp.run_stdio_async
+        elif transport == "sse":
+            coro_fn = mass_mcp.run_sse_async
+        elif transport == "streamable-http":
+            coro_fn = mass_mcp.run_streamable_http_async
+        else:
+            raise ValueError(f"Unknown transport: {transport}")
+
+        exception: BaseException | None = None
+
+        def _run_in_thread() -> None:
+            nonlocal exception
+            try:
+                asyncio.run(coro_fn())
+            except BaseException as exc:
+                exception = exc
+
+        t = threading.Thread(target=_run_in_thread, daemon=True)
+        t.start()
+        t.join()
+        if exception is not None:
+            raise exception
+    else:
+        mass_mcp.run(transport)
