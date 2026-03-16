@@ -85,6 +85,15 @@ def configure_credentials(
         _max_rows = max_rows
 
 
+def configure_server(
+    host: str = "0.0.0.0",
+    port: int = 8000,
+) -> None:
+    """Configure host/port for HTTP transports (sse, streamable-http)."""
+    mass_mcp.settings.host = host
+    mass_mcp.settings.port = port
+
+
 def _get_api_key() -> str:
     """Return the configured API key."""
     return _api_key
