@@ -156,6 +156,7 @@ class TestCallApi:
         mock_response.raise_for_status = MagicMock()
 
         mock_client = AsyncMock()
+        mock_client.headers = {"user-agent": ""}
         mock_client.get = AsyncMock(return_value=mock_response)
 
         with (
@@ -177,6 +178,7 @@ class TestCallApi:
         mock_response.raise_for_status = MagicMock()
 
         mock_client = AsyncMock()
+        mock_client.headers = {"user-agent": ""}
         mock_client.get = AsyncMock(return_value=mock_response)
 
         test_store = DataFrameStore()
@@ -202,6 +204,7 @@ class TestCallApi:
         mock_response.raise_for_status = MagicMock()
 
         mock_client = AsyncMock()
+        mock_client.headers = {"user-agent": ""}
         mock_client.get = AsyncMock(return_value=mock_response)
 
         with (
@@ -223,6 +226,7 @@ class TestCallApi:
         mock_response.raise_for_status = MagicMock()
 
         mock_client = AsyncMock()
+        mock_client.headers = {"user-agent": ""}
         mock_client.get = AsyncMock(return_value=mock_response)
 
         with (
@@ -245,6 +249,7 @@ class TestCallApi:
         mock_response.raise_for_status = MagicMock()
 
         mock_client = AsyncMock()
+        mock_client.headers = {"user-agent": ""}
         mock_client.get = AsyncMock(return_value=mock_response)
 
         with (
@@ -258,6 +263,82 @@ class TestCallApi:
         # Verify the default key was used
         _, kwargs = mock_client.get.call_args
         assert kwargs["headers"]["Authorization"] == "Bearer default-key"
+
+
+class TestUserAgent:
+    @pytest.mark.asyncio
+    async def test_user_agent_appends_version(self):
+        """User-Agent header should append MCP-Massive/<version> to the httpx default."""
+        mock_response = MagicMock()
+        mock_response.text = '{"results": [{"t": 1}]}'
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.headers = {"user-agent": "python-httpx/0.28.1"}
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        with (
+            patch("mcp_massive.server._get_http_client", return_value=mock_client),
+            patch("mcp_massive.server._get_api_key", return_value="test-key"),
+        ):
+            await call_api(
+                "GET",
+                "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
+            )
+        _, kwargs = mock_client.get.call_args
+        ua = kwargs["headers"]["User-Agent"]
+        assert ua.startswith("python-httpx/0.28.1 ")
+        assert "MCP-Massive/" in ua
+
+    @pytest.mark.asyncio
+    async def test_user_agent_contains_version_number(self):
+        """User-Agent should include the actual package version, not 'unknown'."""
+        from importlib.metadata import version as pkg_version
+
+        mock_response = MagicMock()
+        mock_response.text = '{"results": [{"t": 1}]}'
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.headers = {"user-agent": "test-agent"}
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        with (
+            patch("mcp_massive.server._get_http_client", return_value=mock_client),
+            patch("mcp_massive.server._get_api_key", return_value="test-key"),
+        ):
+            await call_api(
+                "GET",
+                "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
+            )
+        _, kwargs = mock_client.get.call_args
+        ua = kwargs["headers"]["User-Agent"]
+        expected_version = pkg_version("mcp_massive")
+        assert f"MCP-Massive/{expected_version}" in ua
+
+    @pytest.mark.asyncio
+    async def test_user_agent_works_without_base_ua(self):
+        """User-Agent should still work if the client has no default user-agent."""
+        mock_response = MagicMock()
+        mock_response.text = '{"results": [{"t": 1}]}'
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.headers = {}
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        with (
+            patch("mcp_massive.server._get_http_client", return_value=mock_client),
+            patch("mcp_massive.server._get_api_key", return_value="test-key"),
+        ):
+            await call_api(
+                "GET",
+                "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
+            )
+        _, kwargs = mock_client.get.call_args
+        ua = kwargs["headers"]["User-Agent"]
+        assert ua.startswith("MCP-Massive/")
+        assert " " not in ua.split("MCP-Massive/")[0]  # no leading space
 
 
 class TestQueryData:
@@ -390,6 +471,7 @@ class TestCallApiApply:
         mock_response.raise_for_status = MagicMock()
 
         mock_client = AsyncMock()
+        mock_client.headers = {"user-agent": ""}
         mock_client.get = AsyncMock(return_value=mock_response)
 
         test_store = DataFrameStore()
@@ -425,6 +507,7 @@ class TestCallApiApply:
         mock_response.raise_for_status = MagicMock()
 
         mock_client = AsyncMock()
+        mock_client.headers = {"user-agent": ""}
         mock_client.get = AsyncMock(return_value=mock_response)
 
         with (
@@ -454,6 +537,7 @@ class TestCallApiApply:
         mock_response.raise_for_status = MagicMock()
 
         mock_client = AsyncMock()
+        mock_client.headers = {"user-agent": ""}
         mock_client.get = AsyncMock(return_value=mock_response)
 
         with (
@@ -481,6 +565,7 @@ class TestCallApiApply:
         mock_response.raise_for_status = MagicMock()
 
         mock_client = AsyncMock()
+        mock_client.headers = {"user-agent": ""}
         mock_client.get = AsyncMock(return_value=mock_response)
 
         test_store = DataFrameStore()
@@ -588,6 +673,7 @@ class TestResponseSizeLimit:
         mock_response.raise_for_status = MagicMock()
 
         mock_client = AsyncMock()
+        mock_client.headers = {"user-agent": ""}
         mock_client.get = AsyncMock(return_value=mock_response)
 
         with (
@@ -608,6 +694,7 @@ class TestResponseSizeLimit:
         mock_response.raise_for_status = MagicMock()
 
         mock_client = AsyncMock()
+        mock_client.headers = {"user-agent": ""}
         mock_client.get = AsyncMock(return_value=mock_response)
 
         with (
@@ -669,6 +756,7 @@ class TestErrorCategories:
             )
 
             mock_client = AsyncMock()
+            mock_client.headers = {"user-agent": ""}
             mock_client.get = AsyncMock(side_effect=exc)
 
             with (
@@ -693,6 +781,7 @@ class TestErrorCategories:
         mock_response.raise_for_status = MagicMock()
 
         mock_client = AsyncMock()
+        mock_client.headers = {"user-agent": ""}
         mock_client.get = AsyncMock(return_value=mock_response)
 
         with (
@@ -769,6 +858,7 @@ class TestPaginationHint:
         mock_response.raise_for_status = MagicMock()
 
         mock_client = AsyncMock()
+        mock_client.headers = {"user-agent": ""}
         mock_client.get = AsyncMock(return_value=mock_response)
 
         with (
@@ -794,6 +884,7 @@ class TestPaginationHint:
         mock_response.raise_for_status = MagicMock()
 
         mock_client = AsyncMock()
+        mock_client.headers = {"user-agent": ""}
         mock_client.get = AsyncMock(return_value=mock_response)
 
         with (
@@ -819,6 +910,7 @@ class TestPaginationHint:
         mock_response.raise_for_status = MagicMock()
 
         mock_client = AsyncMock()
+        mock_client.headers = {"user-agent": ""}
         mock_client.get = AsyncMock(return_value=mock_response)
         test_store = DataFrameStore()
 

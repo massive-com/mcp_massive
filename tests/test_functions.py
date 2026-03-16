@@ -488,6 +488,7 @@ class TestRollingStd:
         expected = np.std([2.0, 4.0, 4.0], ddof=1)
         assert abs(result[2] - expected) < 1e-10
 
+    @pytest.mark.filterwarnings("ignore::RuntimeWarning")
     def test_window_1_returns_nan(self):
         """std with ddof=1 and window=1 is undefined (0/0)."""
         arr = np.array([1.0, 2.0, 3.0])

@@ -151,9 +151,14 @@ class Table:
             if len(unique_lengths) > 1:
                 raise ValueError(
                     f"All columns must have the same length, got inconsistent lengths: "
-                    f"{dict(sorted(((col, length) for col, length in lengths.items()), key=lambda x: (
-                                x[0]
-                            )))}"
+                    f"{
+                        dict(
+                            sorted(
+                                ((col, length) for col, length in lengths.items()),
+                                key=lambda x: x[0],
+                            )
+                        )
+                    }"
                 )
         self.columns = columns
         self.data = data
