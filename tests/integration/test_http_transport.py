@@ -1,29 +1,47 @@
 """Streamable HTTP transport integration tests.
 
-Launches `mcp_massive` in streamable-http mode and connects via
-streamablehttp_client().
+Launches ``mcp_massive`` in streamable-http mode and connects via
+``streamable_http_client()``.
 """
 
 import os
 import signal
+import socket
 import subprocess
 import sys
 import time
 
 import pytest
 from mcp.client.session import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 
 from .conftest import get_text
+
+
+def _free_port() -> int:
+    """Find an available TCP port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
 
 
 @pytest.fixture
 def http_server(mock_env):
     """Start mcp_massive in streamable-http mode as a subprocess, return MCP URL."""
+    port = _free_port()
     env = {**os.environ, **mock_env, "MCP_TRANSPORT": "streamable-http"}
 
+    # main() triggers lazy import of mcp_massive.server which creates mass_mcp
+    # with port 8000.  We override the port *after* main() sets up credentials
+    # but before run() launches uvicorn by monkey-patching the settings.
+    startup_script = (
+        "import mcp_massive;"
+        "from mcp_massive.server import mass_mcp;"
+        f"mass_mcp.settings.port = {port};"
+        "mcp_massive.main()"
+    )
     proc = subprocess.Popen(
-        [sys.executable, "-c", "from mcp_massive import main; main()"],
+        [sys.executable, "-c", startup_script],
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -32,13 +50,13 @@ def http_server(mock_env):
     # Wait for server to be ready by polling the MCP endpoint
     import httpx
 
-    mcp_url = "http://127.0.0.1:8000/mcp"
+    mcp_url = f"http://127.0.0.1:{port}/mcp"
     for _ in range(50):
         try:
             httpx.get(mcp_url, timeout=1.0)
             # Any response (even 405) means the server is up
             break
-        except (httpx.ConnectError, httpx.ReadError):
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadError):
             time.sleep(0.2)
     else:
         proc.kill()
@@ -59,7 +77,7 @@ def http_server(mock_env):
 class TestHttpTransport:
     @pytest.mark.asyncio
     async def test_initialize_and_list_tools(self, http_server):
-        async with streamablehttp_client(http_server) as (read, write, _):
+        async with streamable_http_client(http_server) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.list_tools()
@@ -73,7 +91,7 @@ class TestHttpTransport:
 
     @pytest.mark.asyncio
     async def test_search_endpoints(self, http_server):
-        async with streamablehttp_client(http_server) as (read, write, _):
+        async with streamable_http_client(http_server) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool(
@@ -83,7 +101,7 @@ class TestHttpTransport:
 
     @pytest.mark.asyncio
     async def test_call_api(self, http_server):
-        async with streamablehttp_client(http_server) as (read, write, _):
+        async with streamable_http_client(http_server) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool(
@@ -103,7 +121,7 @@ class TestHttpTransport:
 
     @pytest.mark.asyncio
     async def test_store_and_query(self, http_server):
-        async with streamablehttp_client(http_server) as (read, write, _):
+        async with streamable_http_client(http_server) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
