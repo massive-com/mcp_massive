@@ -86,17 +86,41 @@ def main() -> None:
         max_rows=max_rows,
     )
 
-    # SECURITY: Clear ALL environment variables from this process so that no
-    # secrets (API keys, AWS credentials, etc.) can be exfiltrated via
-    # user-supplied code or SQL.  This only affects the running Python process
-    # and its children — it does not modify the parent shell's environment.
+    # SECURITY: Strip the environment down to only what the OS and Python
+    # runtime need to function (networking, DNS, SSL, temp files).  All
+    # application values (API key, base URL, etc.) have already been
+    # captured into module-level variables via configure_credentials().
     #
-    # NOTE: This is intentionally aggressive.  It removes PATH, HOME, LANG,
-    # SSL_CERT_FILE, and every other variable.  All values the server needs
-    # (API key, base URL, etc.) have already been captured into module-level
-    # variables above via configure_credentials().  If a future dependency
-    # requires an env var at runtime (e.g., SSL cert paths, locale), add it
-    # to an explicit keep-list here rather than removing the clear().
-    os.environ.clear()
+    # On Windows, removing SYSTEMROOT breaks Winsock DNS resolution and
+    # SSL entirely; removing TEMP/TMP breaks tempfile.  We keep a small
+    # whitelist rather than clearing everything.
+    _keep = {
+        # Windows networking / OS
+        "SYSTEMROOT",
+        "SYSTEMDRIVE",
+        "WINDIR",
+        "COMSPEC",
+        "TEMP",
+        "TMP",
+        "USERPROFILE",
+        "APPDATA",
+        "LOCALAPPDATA",
+        "PROGRAMDATA",
+        # Unix / shared
+        "HOME",
+        "TMPDIR",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "PATH",
+        # SSL / cert resolution
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "REQUESTS_CA_BUNDLE",
+        "CURL_CA_BUNDLE",
+    }
+    for key in list(os.environ):
+        if key not in _keep:
+            del os.environ[key]
 
     run(transport=transport)

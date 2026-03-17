@@ -2,8 +2,10 @@ import asyncio
 import os
 import re
 import logging
+import ssl
 from typing import Any
 
+import certifi
 import httpx
 import numpy as np
 import bm25s
@@ -409,7 +411,8 @@ async def build_index(llms_txt_url: str | None = None) -> EndpointIndex:
         llms_txt_url = os.environ.get("MASSIVE_LLMS_TXT_URL", _DEFAULT_LLMS_TXT_URL)
     logger.info("Building endpoint index from llms.txt...")
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+    async with httpx.AsyncClient(timeout=30.0, verify=ssl_ctx) as client:
         try:
             resp = await client.get(llms_txt_url, follow_redirects=True)
             resp.raise_for_status()

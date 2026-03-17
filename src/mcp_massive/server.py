@@ -2,10 +2,12 @@ import atexit
 import json
 import logging
 import re
+import ssl
 import threading
 from typing import Annotated, Optional, Any, Literal
 from urllib.parse import unquote, urlparse, parse_qs
 
+import certifi
 import httpx
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.utilities.func_metadata import ArgModelBase
@@ -132,7 +134,8 @@ def _get_http_client() -> httpx.AsyncClient:
     global _http_client
     with _init_lock:
         if _http_client is None:
-            _http_client = httpx.AsyncClient(timeout=30.0)
+            ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+            _http_client = httpx.AsyncClient(timeout=30.0, verify=ssl_ctx)
             atexit.register(_close_http_client)
         return _http_client
 
