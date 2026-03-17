@@ -56,7 +56,7 @@ def http_server(mock_env):
             httpx.get(mcp_url, timeout=1.0)
             # Any response (even 405) means the server is up
             break
-        except (httpx.ConnectError, httpx.ReadError):
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadError):
             time.sleep(0.2)
     else:
         proc.kill()
