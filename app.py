@@ -4,17 +4,27 @@ FastMCP web deployment entrypoint.
 Exposes the ``mcp`` variable expected by FastMCP cloud / streamable-http
 hosting (entrypoint ``app.py:mcp``).
 
+Compatible with Prefect Horizon, FastMCP Cloud, and any ASGI-based
+MCP hosting platform.
+
 Environment variables (MASSIVE_API_KEY, etc.) are read at import time so the
 hosted runtime can inject them via its secrets / env configuration.
 """
 
+import logging
 import os
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from mcp_massive.server import mass_mcp, configure_credentials  # noqa: E402
+from mcp_massive.server import (  # noqa: E402
+    mass_mcp,
+    configure_credentials,
+    shutdown_http_client,
+)
+
+logger = logging.getLogger(__name__)
 
 # Read configuration from environment
 _massive_api_key = os.environ.get("MASSIVE_API_KEY", "")
@@ -35,6 +45,13 @@ configure_credentials(
     max_tables=_max_tables,
     max_rows=_max_rows,
 )
+
+# SECURITY: Remove secret env vars from the process after capturing them,
+# without nuking system vars needed by the hosted runtime.
+for _secret_key in ("MASSIVE_API_KEY", "POLYGON_API_KEY"):
+    os.environ.pop(_secret_key, None)
+
+logger.info("Massive MCP server configured for web deployment (streamable-http).")
 
 # Expose as ``mcp`` — the name FastMCP cloud expects (entrypoint: app.py:mcp)
 mcp = mass_mcp

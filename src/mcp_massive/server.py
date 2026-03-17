@@ -1,3 +1,4 @@
+import asyncio
 import atexit
 import json
 import logging
@@ -95,15 +96,29 @@ def _get_base_url() -> str:
     return _base_url
 
 
+_async_index_lock: asyncio.Lock | None = None
+
+
+def _get_async_index_lock() -> asyncio.Lock:
+    """Return the asyncio lock for index building, creating it lazily."""
+    global _async_index_lock
+    if _async_index_lock is None:
+        _async_index_lock = asyncio.Lock()
+    return _async_index_lock
+
+
 async def _get_index() -> EndpointIndex:
     global _index
-    with _init_lock:
+    # Fast path: index already built (no lock needed)
+    if _index is not None:
+        return _index
+    # Slow path: build index under an asyncio lock so we don't block the
+    # event loop the way threading.Lock would in an ASGI/web context.
+    async with _get_async_index_lock():
         if _index is not None:
             return _index
-    idx = await build_index(llms_txt_url=_llms_txt_url)
-    with _init_lock:
-        if _index is None:
-            _index = idx
+        idx = await build_index(llms_txt_url=_llms_txt_url)
+        _index = idx
         return _index
 
 
@@ -133,12 +148,24 @@ def _get_http_client() -> httpx.AsyncClient:
     with _init_lock:
         if _http_client is None:
             _http_client = httpx.AsyncClient(timeout=30.0)
-            atexit.register(_close_http_client)
         return _http_client
 
 
-def _close_http_client() -> None:
-    """Close the httpx client at process exit to release connections."""
+async def shutdown_http_client() -> None:
+    """Gracefully close the httpx client.
+
+    Call this from an ASGI lifespan shutdown handler or atexit.
+    Prefer calling from an async context (e.g. FastMCP lifespan).
+    """
+    global _http_client
+    client = _http_client
+    if client is not None:
+        _http_client = None
+        await client.aclose()
+
+
+def _close_http_client_sync() -> None:
+    """Synchronous fallback for atexit — best-effort close."""
     global _http_client
     client = _http_client
     if client is not None:
@@ -486,6 +513,11 @@ def run(transport: Literal["stdio", "sse", "streamable-http"] = "stdio") -> None
     ``anyio.run()`` would otherwise raise.
     """
     import asyncio
+
+    # Register sync atexit fallback for CLI / stdio usage.
+    # For web deployments (streamable-http), prefer the async
+    # shutdown_http_client() called from an ASGI lifespan handler.
+    atexit.register(_close_http_client_sync)
 
     try:
         loop = asyncio.get_running_loop()
