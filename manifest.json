@@ -20,18 +20,6 @@
     "https://massive.com/legal/privacy"
   ],
   "icon": "assets/icon-massive-lightmode.png",
-  "icons": [
-    {
-      "src": "assets/icon-massive-lightmode.png",
-      "size": "512x512",
-      "theme": "light"
-    },
-    {
-      "src": "assets/icon-massive-darkmode.png",
-      "size": "512x512",
-      "theme": "dark"
-    }
-  ],
   "keywords": [
     "finance",
     "market-data",

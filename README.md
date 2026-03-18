@@ -243,6 +243,7 @@ This MCP server interacts with Massive.com's API to fetch market data. All data 
 - **Massive.com Privacy Policy**: https://massive.com/legal/privacy
 - **Data Handling**: This server does not store or cache any user data. All requests are proxied directly to Massive.com's API.
 - **API Key**: Your Massive.com API key is used only for authenticating requests to their API.
+- **User-Agent**: API requests include a User-Agent string containing the MCP server version (e.g., `MCP-Massive/0.x.y`). No personally identifiable information is included.
 
 ## Contributing
 If you found a bug or have an idea for a new feature, please first discuss it with us by submitting a new issue.

@@ -10,6 +10,7 @@ from mcp_massive.store import (
     TABLE_NAME_RE,
     _infer_sqlite_affinity,
     _infer_dtype_label,
+    _preprocess_sql,
 )
 
 
@@ -2164,6 +2165,164 @@ class TestSQLFeatureCoverage:
         # eng top 2: Eve(130), Bob(120); sales top 2: Dave(110), Carol(90)
         assert len(df) == 4
         assert df["name"] == ["Eve", "Bob", "Dave", "Carol"]
+
+
+class TestPreprocessNestedEdgeCases:
+    """Tests for _preprocess_sql handling of nested/complex SQL.
+
+    These cover edge cases where a regex-based STRING_AGG rewrite would
+    mangle valid queries containing nested function calls, CASE expressions,
+    or subqueries as arguments.  The AST-based approach handles them all.
+    """
+
+    def _make_store(self):
+        s = DataFrameStore()
+        s.store(
+            "employees",
+            [
+                {"name": "Alice", "dept": "eng", "salary": 100, "hired": 1},
+                {"name": "Bob", "dept": "eng", "salary": 120, "hired": 2},
+                {"name": "Carol", "dept": "sales", "salary": 90, "hired": 3},
+                {"name": "Dave", "dept": "sales", "salary": 110, "hired": 4},
+                {"name": "Eve", "dept": "eng", "salary": 130, "hired": 5},
+            ],
+        )
+        return s
+
+    # ---- STRING_AGG with nested expressions (previously broken by regex) ----
+
+    def test_string_agg_with_coalesce_nested_function(self):
+        """STRING_AGG with COALESCE (commas in first arg break regex [^,]+)."""
+        s = self._make_store()
+        df = s.query_table(
+            "SELECT dept, STRING_AGG(COALESCE(name, 'Unknown'), ', ' ORDER BY name) AS names "
+            "FROM employees GROUP BY dept ORDER BY dept"
+        )
+        assert df["dept"] == ["eng", "sales"]
+        eng_names = set(df["names"][0].split(", "))
+        assert eng_names == {"Alice", "Bob", "Eve"}
+
+    def test_string_agg_with_case_in_list(self):
+        """STRING_AGG with CASE WHEN ... IN (1, 2) — commas inside IN break regex."""
+        s = DataFrameStore()
+        s.store("items", [
+            {"id": 1, "label": "a"},
+            {"id": 2, "label": "b"},
+            {"id": 3, "label": "c"},
+        ])
+        df = s.query_table(
+            "SELECT STRING_AGG("
+            "  CASE WHEN id IN (1, 2) THEN label ELSE 'other' END, ', '"
+            "  ORDER BY label"
+            ") AS result FROM items"
+        )
+        # id=1→'a', id=2→'b', id=3→'other'
+        labels = set(df["result"][0].split(", "))
+        assert labels == {"a", "b", "other"}
+
+    def test_string_agg_with_case_expression(self):
+        """STRING_AGG with a CASE expression as the value arg."""
+        s = self._make_store()
+        df = s.query_table(
+            "SELECT dept, STRING_AGG("
+            "  CASE WHEN salary > 100 THEN name ELSE 'low' END, ', '"
+            "  ORDER BY name"
+            ") AS labels "
+            "FROM employees GROUP BY dept ORDER BY dept"
+        )
+        assert df["dept"] == ["eng", "sales"]
+        eng_labels = set(df["labels"][0].split(", "))
+        assert eng_labels == {"low", "Bob", "Eve"}
+
+    def test_string_agg_without_order_by(self):
+        """Plain STRING_AGG without ORDER BY should rewrite to GROUP_CONCAT."""
+        s = self._make_store()
+        df = s.query_table(
+            "SELECT dept, STRING_AGG(name, ', ') AS names "
+            "FROM employees GROUP BY dept ORDER BY dept"
+        )
+        assert df["dept"] == ["eng", "sales"]
+        assert len(df["names"][0].split(", ")) == 3
+        assert len(df["names"][1].split(", ")) == 2
+
+    def test_string_agg_in_subquery(self):
+        """STRING_AGG inside a subquery."""
+        s = self._make_store()
+        df = s.query_table(
+            "SELECT sub.dept, sub.names FROM ("
+            "  SELECT dept, STRING_AGG(name, ', ' ORDER BY name) AS names "
+            "  FROM employees GROUP BY dept"
+            ") sub ORDER BY sub.dept"
+        )
+        assert df["dept"] == ["eng", "sales"]
+        eng_names = set(df["names"][0].split(", "))
+        assert eng_names == {"Alice", "Bob", "Eve"}
+
+    def test_string_agg_concat_nested(self):
+        """STRING_AGG wrapping CONCAT (commas break regex [^,]+)."""
+        s = self._make_store()
+        df = s.query_table(
+            "SELECT dept, STRING_AGG(CONCAT(name, ':' , dept), ', ' ORDER BY name) AS pairs "
+            "FROM employees GROUP BY dept ORDER BY dept"
+        )
+        assert df["dept"] == ["eng", "sales"]
+        eng_pairs = set(df["pairs"][0].split(", "))
+        assert eng_pairs == {"Alice:eng", "Bob:eng", "Eve:eng"}
+
+    # ---- Keyword-in-string-literal preservation ----
+
+    def test_preprocess_preserves_double_in_string_literal(self):
+        """DOUBLE inside a string literal must not become REAL."""
+        result = _preprocess_sql("SELECT * FROM t WHERE col = 'DOUBLE value'")
+        assert "'DOUBLE value'" in result
+
+    def test_preprocess_preserves_ilike_in_string_literal(self):
+        """ILIKE inside a string literal must not become LIKE."""
+        result = _preprocess_sql("SELECT * FROM t WHERE col = 'uses ILIKE syntax'")
+        assert "'uses ILIKE syntax'" in result
+
+    def test_preprocess_preserves_varchar_in_string_literal(self):
+        """VARCHAR inside a string literal must not become TEXT."""
+        result = _preprocess_sql("SELECT * FROM t WHERE col = 'type is VARCHAR'")
+        assert "'type is VARCHAR'" in result
+
+    # ---- Direct _preprocess_sql output validation ----
+
+    def test_preprocess_string_agg_coalesce_output(self):
+        """_preprocess_sql must produce balanced parens for STRING_AGG(COALESCE(...))."""
+        sql = "SELECT STRING_AGG(COALESCE(a, b), ', ' ORDER BY a) FROM t"
+        result = _preprocess_sql(sql)
+        assert "GROUP_CONCAT" in result.upper()
+        assert "STRING_AGG" not in result.upper()
+        assert result.count("(") == result.count(")")
+
+    def test_preprocess_any_value_rewrite(self):
+        """ANY_VALUE should be rewritten to an aggregate (MIN or MAX)."""
+        result = _preprocess_sql("SELECT ANY_VALUE(name) FROM t GROUP BY dept")
+        upper = result.upper()
+        assert "ANY_VALUE" not in upper
+        assert "MIN" in upper or "MAX" in upper
+
+    def test_preprocess_ilike_rewrite(self):
+        """ILIKE should be rewritten to a case-insensitive form."""
+        result = _preprocess_sql("SELECT * FROM t WHERE name ILIKE '%foo%'")
+        upper = result.upper()
+        # sqlglot rewrites to LOWER(name) LIKE LOWER('%foo%')
+        assert "ILIKE" not in upper
+        assert "LIKE" in upper
+
+    def test_preprocess_cast_varchar_to_text(self):
+        """CAST(... AS VARCHAR) should become CAST(... AS TEXT)."""
+        result = _preprocess_sql("SELECT CAST(x AS VARCHAR) FROM t")
+        assert "TEXT" in result.upper()
+        assert "VARCHAR" not in result.upper()
+
+    def test_preprocess_cast_double_to_real(self):
+        """CAST(... AS DOUBLE) should become CAST(... AS REAL)."""
+        result = _preprocess_sql("SELECT CAST(x AS DOUBLE) FROM t")
+        assert "REAL" in result.upper()
+        # DOUBLE should not appear (except possibly in a different context)
+        assert "DOUBLE" not in result.upper()
 
 
 class TestSQLSecurityValidation:
