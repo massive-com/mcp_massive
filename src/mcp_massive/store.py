@@ -370,27 +370,18 @@ def _rewrite_count_filter(tree: exp.Expression) -> exp.Expression:
 
 
 def _preprocess_sql(sql: str) -> str:
-    """Normalize common SQL dialect differences to SQLite-compatible syntax."""
-    # ILIKE -> LIKE (SQLite LIKE is case-insensitive for ASCII by default)
-    sql = re.sub(r"\bILIKE\b", "LIKE", sql, flags=re.IGNORECASE)
-    # CAST(... AS VARCHAR) -> CAST(... AS TEXT)
-    sql = re.sub(r"\bVARCHAR\b", "TEXT", sql, flags=re.IGNORECASE)
-    # CAST(... AS DOUBLE) -> CAST(... AS REAL)
-    sql = re.sub(r"\bDOUBLE\b", "REAL", sql, flags=re.IGNORECASE)
-    # STRING_AGG(expr, sep ORDER BY ...) -> GROUP_CONCAT(expr, sep)
-    # This is a simplified rewrite — strips ORDER BY inside STRING_AGG
-    sql = re.sub(
-        r"\bSTRING_AGG\s*\(\s*([^,]+),\s*([^)]*?)\s+ORDER\s+BY\s+[^)]+\)",
-        r"GROUP_CONCAT(\1, \2)",
-        sql,
-        flags=re.IGNORECASE,
-    )
-    # STRING_AGG without ORDER BY -> GROUP_CONCAT
-    sql = re.sub(r"\bSTRING_AGG\b", "GROUP_CONCAT", sql, flags=re.IGNORECASE)
-    # ANY_VALUE(x) -> MIN(x) — both return an arbitrary value from the group
-    sql = re.sub(r"\bANY_VALUE\s*\(", "MIN(", sql, flags=re.IGNORECASE)
-    # COUNT(*) FILTER (WHERE cond) -> SUM(CASE WHEN cond THEN 1 ELSE 0 END)
-    # Uses AST rewrite via sqlglot to handle nested parentheses correctly.
+    """Normalize common SQL dialect differences to SQLite-compatible syntax.
+
+    Uses sqlglot's AST-based dialect transpilation to handle:
+      - ILIKE -> LIKE (via LOWER wrapping)
+      - CAST(... AS VARCHAR/DOUBLE) -> CAST(... AS TEXT/REAL)
+      - STRING_AGG(...) -> GROUP_CONCAT(...)
+      - ANY_VALUE(x) -> MAX(x)
+      - COUNT(*) FILTER (WHERE cond) -> SUM(CASE WHEN cond THEN 1 ELSE 0 END)
+
+    All rewrites go through the AST so they correctly handle nested
+    expressions, subqueries, and keywords inside string literals.
+    """
     try:
         tree = sqlglot.parse_one(sql, dialect="sqlite")
         tree = _rewrite_count_filter(tree)

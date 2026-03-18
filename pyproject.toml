@@ -31,5 +31,10 @@ dev = [
     "rust-just>=1.42.4",
 ]
 
+[tool.uv]
+constraint-dependencies = [
+    "PyJWT>=2.12.0",
+]
+
 [project.scripts]
 mcp_massive = "mcp_massive:main"
