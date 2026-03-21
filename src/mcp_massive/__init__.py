@@ -86,41 +86,4 @@ def main() -> None:
         max_rows=max_rows,
     )
 
-    # SECURITY: Strip the environment down to only what the OS and Python
-    # runtime need to function (networking, DNS, SSL, temp files).  All
-    # application values (API key, base URL, etc.) have already been
-    # captured into module-level variables via configure_credentials().
-    #
-    # On Windows, removing SYSTEMROOT breaks Winsock DNS resolution and
-    # SSL entirely; removing TEMP/TMP breaks tempfile.  We keep a small
-    # whitelist rather than clearing everything.
-    _keep = {
-        # Windows networking / OS
-        "SYSTEMROOT",
-        "SYSTEMDRIVE",
-        "WINDIR",
-        "COMSPEC",
-        "TEMP",
-        "TMP",
-        "USERPROFILE",
-        "APPDATA",
-        "LOCALAPPDATA",
-        "PROGRAMDATA",
-        # Unix / shared
-        "HOME",
-        "TMPDIR",
-        "LANG",
-        "LC_ALL",
-        "LC_CTYPE",
-        "PATH",
-        # SSL / cert resolution
-        "SSL_CERT_FILE",
-        "SSL_CERT_DIR",
-        "REQUESTS_CA_BUNDLE",
-        "CURL_CA_BUNDLE",
-    }
-    for key in list(os.environ):
-        if key not in _keep:
-            del os.environ[key]
-
     run(transport=transport)

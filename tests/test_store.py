@@ -2205,11 +2205,14 @@ class TestPreprocessNestedEdgeCases:
     def test_string_agg_with_case_in_list(self):
         """STRING_AGG with CASE WHEN ... IN (1, 2) — commas inside IN break regex."""
         s = DataFrameStore()
-        s.store("items", [
-            {"id": 1, "label": "a"},
-            {"id": 2, "label": "b"},
-            {"id": 3, "label": "c"},
-        ])
+        s.store(
+            "items",
+            [
+                {"id": 1, "label": "a"},
+                {"id": 2, "label": "b"},
+                {"id": 3, "label": "c"},
+            ],
+        )
         df = s.query_table(
             "SELECT STRING_AGG("
             "  CASE WHEN id IN (1, 2) THEN label ELSE 'other' END, ', '"
