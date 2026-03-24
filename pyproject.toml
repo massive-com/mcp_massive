@@ -20,8 +20,8 @@ name = "Massive"
 email = "support@massive.com"
 
 [build-system]
-requires = [ "hatchling",]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.11.0,<0.12.0"]
+build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
