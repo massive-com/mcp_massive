@@ -1,0 +1,13 @@
+# Massive.com REST API
+
+> REST API documentation
+
+## Stocks
+
+- [Custom Bars (OHLC)](https://massive.com/docs/rest/stocks/custom-bars-ohlc): Retrieve aggregated historical OHLC data for a specified stock ticker.
+- [Last Trade](https://massive.com/docs/rest/stocks/last-trade): Get the most recent trade for a ticker.
+- [Trades](https://massive.com/docs/rest/stocks/trades): Get trades for a ticker symbol in a given time range.
+
+## Options
+
+- [Option Chain Snapshot](https://massive.com/docs/rest/options/option-chain-snapshot): Get the snapshot of all options contracts for an underlying ticker.

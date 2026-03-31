@@ -47,7 +47,7 @@ def mock_env(mock_server):
     return {
         "MASSIVE_API_KEY": "test-integration-key",
         "MASSIVE_API_BASE_URL": mock_server,
-        "MASSIVE_LLMS_TXT_URL": f"{mock_server}/docs/rest/llms.txt",
+        "MASSIVE_LLMS_TXT_URL": f"{mock_server}/docs/rest/llms-full.txt",
     }
 
 

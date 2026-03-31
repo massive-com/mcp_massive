@@ -220,7 +220,7 @@ async def search_endpoints(
         results = idx.search(query, top_k=top_k)
         for ep in results:
             lines.append(
-                f"{counter}. {ep.name} [{ep.category}]\n"
+                f"{counter}. {ep.name} [{ep.market}]\n"
                 f"   {ep.endpoint_pattern}\n"
                 f"   {ep.description}\n"
                 f"   Docs: {ep.url}"
