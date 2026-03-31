@@ -8,6 +8,7 @@ from typing import Any, cast
 
 import sqlglot
 from sqlglot import exp
+from sqlglot.errors import ParseError as SQLParseError
 from pydantic import BaseModel, Field
 
 TABLE_NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]{0,62}$")
@@ -407,7 +408,7 @@ def _preprocess_sql(sql: str) -> str:
         tree = sqlglot.parse_one(sql, dialect="sqlite")
         tree = _rewrite_count_filter(tree)
         sql = tree.sql(dialect="sqlite")
-    except sqlglot.errors.ParseError:
+    except SQLParseError:
         pass  # fall through with original SQL; _validate_sql will catch errors
     return sql
 
@@ -674,7 +675,7 @@ class DataFrameStore:
 
         try:
             statements = sqlglot.parse(stripped, dialect="sqlite")
-        except sqlglot.errors.ParseError as exc:
+        except SQLParseError as exc:
             raise ValueError(f"SQL parse error: {exc}") from exc
 
         # Filter out None entries that sqlglot may return for trailing

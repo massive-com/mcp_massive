@@ -34,6 +34,9 @@ jobs:
       - name: Run tests
         run: uv run just test
 
+      - name: Run e2e tests
+        run: uv run pytest -m e2e -v tests
+
   test-windows:
     name: Windows Tests
     runs-on: windows-latest

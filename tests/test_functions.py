@@ -1,4 +1,5 @@
 import math
+from typing import cast
 
 import numpy as np
 import pytest
@@ -1038,8 +1039,9 @@ class TestApplyPipeline:
     def test_step_not_dict(self):
         """Non-dict steps raise ValueError."""
         df = _table(x=[1.0])
+        bad_steps = cast(list[dict], ["not_a_dict"])
         with pytest.raises(ValueError, match="expected a dict"):
-            apply_pipeline(df, ["not_a_dict"])  # type: ignore[list-item]
+            apply_pipeline(df, bad_steps)
 
 
 # ---------------------------------------------------------------------------

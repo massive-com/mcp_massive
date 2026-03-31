@@ -1,4 +1,3 @@
-import asyncio
 import os
 import re
 import logging
@@ -15,7 +14,7 @@ from bm25s.stopwords import STOPWORDS_EN
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_LLMS_TXT_URL = "https://massive.com/docs/rest/llms.txt"
+_DEFAULT_LLMS_FULL_TXT_URL = "https://massive.com/docs/rest/llms-full.txt"
 
 _snowball = snowballstemmer.stemmer("english")
 _STOPWORDS = frozenset(STOPWORDS_EN)
@@ -23,12 +22,36 @@ _STOPWORDS = frozenset(STOPWORDS_EN)
 
 class Endpoint(BaseModel):
     name: str = Field(min_length=1)
-    category: str
+    market: str
     url: str
     description: str
     endpoint_pattern: str
     compressed_doc: str
     path_prefix: str
+
+
+class QueryParam(BaseModel):
+    name: str
+    type: str
+    required: bool
+    description: str
+
+
+class ResponseAttribute(BaseModel):
+    name: str
+    type: str
+    description: str
+
+
+class ParsedEndpoint(BaseModel):
+    title: str
+    path: str
+    method: str
+    market: str
+    description: str
+    query_params: list[QueryParam]
+    response_attributes: list[ResponseAttribute]
+    sample_response: str
 
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -184,8 +207,8 @@ ALIASES: dict[str, str | list[str]] = {
     "exchange": "exchanges",
 }
 
-# Category keywords for weight_mask boosting
-_CATEGORY_KEYWORDS: dict[str, set[str]] = {
+# Market keywords for weight_mask boosting
+_MARKET_KEYWORDS: dict[str, set[str]] = {
     "Stocks": {"stock", "stocks", "equity", "equities", "share", "shares"},
     "Crypto": {"crypto", "cryptocurrency", "bitcoin", "btc", "eth", "coin"},
     "Forex": {"forex", "fx", "currency", "currencies"},
@@ -221,8 +244,8 @@ def _tokenize(text: str) -> list[str]:
 
 def _build_corpus_text(ep: Endpoint) -> str:
     """Build enriched corpus text for an endpoint with field weighting."""
-    # Repeat name 3x and category 2x for BM25F-like field weighting
-    parts = [ep.name, ep.name, ep.name, ep.category, ep.category, ep.description]
+    # Repeat name 3x and market 2x for BM25F-like field weighting
+    parts = [ep.name, ep.name, ep.name, ep.market, ep.market, ep.description]
     # Extract camelCase path param tokens: {stocksTicker} -> "stocks", "ticker"
     for param in re.findall(r"\{(\w+)\}", ep.endpoint_pattern):
         parts.extend(re.findall(r"[a-z]+", param))
@@ -242,12 +265,12 @@ def _build_corpus_text(ep: Endpoint) -> str:
     return " ".join(parts)
 
 
-def _detect_category(query: str) -> str | None:
-    """Detect asset-class category from query keywords. Returns category name or None."""
+def _detect_market(query: str) -> str | None:
+    """Detect asset-class market from query keywords. Returns market name or None."""
     query_words = set(_TOKEN_RE.findall(query.lower()))
-    for category, keywords in _CATEGORY_KEYWORDS.items():
+    for market, keywords in _MARKET_KEYWORDS.items():
         if query_words & keywords:
-            return category
+            return market
     return None
 
 
@@ -258,8 +281,8 @@ class EndpointIndex:
             ep.url: ep.compressed_doc for ep in endpoints
         }
 
-        # Build category array for weight_mask
-        self._categories = [ep.category for ep in endpoints]
+        # Build market array for weight_mask
+        self._markets = [ep.market for ep in endpoints]
 
         # Build BM25 index
         corpus = [_build_corpus_text(ep) for ep in endpoints]
@@ -280,15 +303,15 @@ class EndpointIndex:
             return []
         tokenized_query = _tokenize(query)
 
-        # Build weight_mask for category boosting
+        # Build weight_mask for market boosting
         retrieve_kwargs: dict[str, Any] = {
             "k": min(top_k, len(self._endpoints)),
         }
-        detected_category = _detect_category(query)
-        if detected_category and self._endpoints:
+        detected_market = _detect_market(query)
+        if detected_market and self._endpoints:
             mask = np.ones(len(self._endpoints), dtype=np.float32)
-            for i, cat in enumerate(self._categories):
-                if cat == detected_category:
+            for i, market in enumerate(self._markets):
+                if market == detected_market:
                     mask[i] = 2.0
             retrieve_kwargs["weight_mask"] = mask
 
@@ -314,13 +337,13 @@ class EndpointIndex:
 
 def parse_llms_txt(text: str) -> list[dict]:
     entries = []
-    current_category = ""
+    current_market = ""
     for line in text.splitlines():
         line = line.strip()
-        # Track category headers
-        cat_match = re.match(r"^##\s+(.+)$", line)
-        if cat_match:
-            current_category = cat_match.group(1).strip()
+        # Track market headers
+        market_match = re.match(r"^##\s+(.+)$", line)
+        if market_match:
+            current_market = market_match.group(1).strip()
             continue
         # Parse entry lines: - [Name](url): description
         entry_match = re.match(r"^-\s+\[([^\]]+)\]\(([^)]+)\):\s*(.+)$", line)
@@ -330,134 +353,228 @@ def parse_llms_txt(text: str) -> list[dict]:
                     "name": entry_match.group(1).strip(),
                     "url": entry_match.group(2).strip(),
                     "description": entry_match.group(3).strip(),
-                    "category": current_category,
+                    "market": current_market,
                 }
             )
     return entries
 
 
-def extract_endpoint_pattern(doc_text: str) -> str:
-    match = re.search(r"\*\*Endpoint:\*\*\s*`([^`]+)`", doc_text)
-    if match:
-        return match.group(1).strip()
-    return ""
+def _slugify(text: str) -> str:
+    """Convert text to a URL-friendly slug."""
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
 
 
-def extract_path_prefix(endpoint_pattern: str) -> str:
-    # Remove the HTTP method prefix (e.g., "GET ")
-    parts = endpoint_pattern.split(" ", 1)
-    path = parts[1] if len(parts) > 1 else parts[0]
-
-    # Find the first `{` param placeholder
-    brace_idx = path.find("{")
-    if brace_idx == -1:
-        # No params — entire path is the prefix
-        return path
-    # Return everything up to and including the last `/` before the brace
-    prefix = path[:brace_idx]
-    return prefix
+_BULLET_PARAM_RE = re.compile(r"^-\s+\*{0,2}(\w+)\*{0,2}\s*\(([^)]+)\)(?::\s*(.*))?$")
 
 
-def compress_doc(doc_text: str) -> str:
-    lines = doc_text.splitlines()
-    result_lines = []
-    in_query_params = False
+def parse_table_rows(text: str, section_header: str) -> list[dict[str, str]]:
+    """Extract rows from a markdown pipe-table under the given ``## header``."""
+    pattern = rf"## {re.escape(section_header)}\s*\n"
+    m = re.search(pattern, text)
+    if not m:
+        return []
+    table_text = text[m.end() :]
+    lines = table_text.split("\n")
+    rows: list[dict[str, str]] = []
+    headers: list[str] = []
 
     for line in lines:
-        stripped = line.strip()
-
-        # Always include endpoint pattern line
-        if "**Endpoint:**" in line:
-            result_lines.append(stripped)
+        line = line.strip()
+        if not line.startswith("|"):
+            if headers:
+                break
             continue
-
-        # Detect section transitions
-        if re.match(r"^#{1,4}\s+Query Parameters", stripped, re.IGNORECASE):
-            in_query_params = True
-            result_lines.append(stripped)
-            continue
-
-        if re.match(r"^#{1,4}\s+", stripped):
-            # Any other section header ends query params
-            in_query_params = False
-            continue
-
-        # Include query parameter lines
-        if in_query_params and stripped:
-            result_lines.append(stripped)
-            continue
-
-    return "\n".join(result_lines)
+        cells = [c.strip().strip("`") for c in line.split("|")[1:-1]]
+        if not headers:
+            headers = [c.lower() for c in cells]
+        elif all(set(c.strip()) <= {"-", " "} for c in cells):
+            continue  # separator row
+        else:
+            rows.append(dict(zip(headers, cells)))
+    return rows
 
 
-_DOC_FETCH_CONCURRENCY = 20
+def _parse_bullet_items(text: str, section_header: str) -> list[dict[str, str]]:
+    """Extract bullet-list items from under a ``## heading``."""
+    pattern = re.compile(rf"^## {re.escape(section_header)}\s*$", re.MULTILINE)
+    m = pattern.search(text)
+    if not m:
+        return []
+    rest = text[m.end() :]
+    next_section = re.search(r"^## ", rest, re.MULTILINE)
+    if next_section:
+        rest = rest[: next_section.start()]
+
+    items: list[dict[str, str]] = []
+    for line in rest.strip().splitlines():
+        bm = _BULLET_PARAM_RE.match(line.strip())
+        if bm:
+            items.append(
+                {
+                    "name": bm.group(1),
+                    "type": bm.group(2),
+                    "description": (bm.group(3) or "").strip(),
+                }
+            )
+    return items
 
 
-async def _fetch_doc(
-    client: httpx.AsyncClient, url: str, sem: asyncio.Semaphore
-) -> tuple[str, str | None]:
-    async with sem:
-        try:
-            resp = await client.get(url, follow_redirects=True)
-            resp.raise_for_status()
-            return url, resp.text
-        except Exception as e:
-            logger.warning("Failed to fetch doc %s: %s", url, e)
-            return url, None
+def _parse_section_params(text: str, section_header: str) -> list[dict[str, str]]:
+    """Parse params from a section, trying pipe-table format first then bullets."""
+    rows = parse_table_rows(text, section_header)
+    if rows:
+        return rows
+    return _parse_bullet_items(text, section_header)
+
+
+def parse_query_params(section: str) -> list[QueryParam]:
+    """Parse query parameters from a doc section."""
+    rows = _parse_section_params(section, "Query Parameters")
+    return [
+        QueryParam(
+            name=row.get("parameter", row.get("name", "")),
+            type=row.get("type", "").split(",")[0].strip(),
+            required=row.get("required", "").lower() in ("yes", "true")
+            or "required" in row.get("type", "").lower(),
+            description=row.get("description", ""),
+        )
+        for row in rows
+    ]
+
+
+def parse_response_attributes(section: str) -> list[ResponseAttribute]:
+    """Parse response attributes from a doc section."""
+    rows = _parse_section_params(section, "Response Attributes")
+    return [
+        ResponseAttribute(
+            name=row.get("field", row.get("name", "")),
+            type=row.get("type", "").split(",")[0].strip(),
+            description=row.get("description", ""),
+        )
+        for row in rows
+    ]
+
+
+_STRUCTURAL_SECTIONS = {"Query Parameters", "Response Attributes", "Sample Response"}
+
+
+def parse_endpoint_section(section: str) -> ParsedEndpoint | None:
+    """Parse a single ``---``-delimited doc section into a :class:`ParsedEndpoint`."""
+    ep_match = re.search(r"\*\*Endpoint:\*\*\s*`(\w+)\s+(.+?)`", section)
+    if not ep_match:
+        return None
+    method = ep_match.group(1)
+    path = ep_match.group(2)
+
+    # Title and market from headings before the **Endpoint:** line
+    before_ep = section[: ep_match.start()]
+    h2_matches = re.findall(r"^## (.+)$", before_ep, re.MULTILINE)
+    h3_matches = re.findall(r"^### (.+)$", before_ep, re.MULTILINE)
+    market_candidates = [
+        h.strip() for h in h2_matches if h.strip() not in _STRUCTURAL_SECTIONS
+    ]
+    market = market_candidates[0] if market_candidates else "Unknown"
+    title = (
+        h3_matches[-1].strip()
+        if h3_matches
+        else (market_candidates[-1] if market_candidates else "Unknown")
+    )
+
+    # Description: text between **Description:** and next ## heading
+    desc_match = re.search(
+        r"\*\*Description:\*\*\s*\n(.*?)(?=\n## |\Z)", section, re.DOTALL
+    )
+    description = desc_match.group(1).strip() if desc_match else ""
+
+    # Sample response
+    sample_match = re.search(
+        r"## Sample Response\s*\n```json\s*\n(.*?)```", section, re.DOTALL
+    )
+    sample_response = sample_match.group(1).strip() if sample_match else ""
+
+    return ParsedEndpoint(
+        title=title,
+        path=path,
+        method=method,
+        market=market,
+        description=description,
+        query_params=parse_query_params(section),
+        response_attributes=parse_response_attributes(section),
+        sample_response=sample_response,
+    )
+
+
+def parse_llms_full_txt(text: str) -> list[ParsedEndpoint]:
+    """Parse the combined llms-full.txt into per-endpoint :class:`ParsedEndpoint` objects."""
+    sections = [s for s in text.split("\n---\n") if s.strip()]
+    entries: list[ParsedEndpoint] = []
+    for section in sections:
+        ep = parse_endpoint_section(section)
+        if ep:
+            entries.append(ep)
+    return entries
+
+
+def _compressed_doc(ep: ParsedEndpoint) -> str:
+    """Build a compressed doc string from structured endpoint data."""
+    lines = [f"**Endpoint:** `{ep.method} {ep.path}`"]
+    if ep.query_params:
+        lines.append("## Query Parameters")
+        for qp in ep.query_params:
+            req = "required" if qp.required else "optional"
+            lines.append(f"- {qp.name} ({qp.type}, {req}): {qp.description}")
+    return "\n".join(lines)
+
+
+def _path_prefix(path: str) -> str:
+    """Return the path up to (but not including) the first ``{`` placeholder."""
+    brace_idx = path.find("{")
+    if brace_idx == -1:
+        return path
+    return path[:brace_idx]
 
 
 async def build_index(llms_txt_url: str | None = None) -> EndpointIndex:
     if llms_txt_url is None:
-        llms_txt_url = os.environ.get("MASSIVE_LLMS_TXT_URL", _DEFAULT_LLMS_TXT_URL)
-    logger.info("Building endpoint index from llms.txt...")
+        llms_txt_url = os.environ.get(
+            "MASSIVE_LLMS_TXT_URL", _DEFAULT_LLMS_FULL_TXT_URL
+        )
+    logger.info("Building endpoint index from %s ...", llms_txt_url)
 
     ssl_ctx = ssl.create_default_context(cafile=certifi.where())
     async with httpx.AsyncClient(timeout=30.0, verify=ssl_ctx) as client:
         try:
             resp = await client.get(llms_txt_url, follow_redirects=True)
             resp.raise_for_status()
-            llms_text = resp.text
+            full_text = resp.text
         except Exception as e:
-            logger.error("Error fetching llms.txt: %s", e)
+            logger.error("Error fetching %s: %s", llms_txt_url, e)
             return EndpointIndex([])
 
-        entries = parse_llms_txt(llms_text)
-        logger.info("Found %d endpoints in llms.txt", len(entries))
-
-        # Fetch all doc pages with bounded concurrency
-        sem = asyncio.Semaphore(_DOC_FETCH_CONCURRENCY)
-        results = await asyncio.gather(
-            *(_fetch_doc(client, entry["url"], sem) for entry in entries)
-        )
-        doc_texts: dict[str, str | None] = dict(results)
+    parsed = parse_llms_full_txt(full_text)
+    logger.info("Found %d endpoints in llms-full.txt", len(parsed))
 
     # Build endpoints
     endpoints = []
-    for entry in entries:
+    for ep in parsed:
         # Filter deprecated endpoints
-        if "(Deprecated)" in entry["name"]:
-            logger.info("Skipping deprecated endpoint: %s", entry["name"])
+        if "(Deprecated)" in ep.title:
+            logger.info("Skipping deprecated endpoint: %s", ep.title)
             continue
 
-        doc_text = doc_texts.get(entry["url"])
-        if doc_text is None:
-            logger.warning("Skipping %s — doc fetch failed", entry["name"])
-            continue
-
-        pattern = extract_endpoint_pattern(doc_text)
-        if not pattern:
-            logger.warning("Skipping %s — no endpoint pattern found", entry["name"])
-            continue
-
-        prefix = extract_path_prefix(pattern)
-        compressed = compress_doc(doc_text)
+        pattern = f"{ep.method} {ep.path}"
+        prefix = _path_prefix(ep.path)
+        compressed = _compressed_doc(ep)
+        cat_slug = _slugify(ep.market) if ep.market else "general"
+        name_slug = _slugify(ep.title)
+        url = f"https://massive.com/docs/rest/{cat_slug}/{name_slug}"
 
         endpoints.append(
             Endpoint(
-                name=entry["name"],
-                category=entry["category"],
-                url=entry["url"],
-                description=entry["description"],
+                name=ep.title,
+                market=ep.market,
+                url=url,
+                description=ep.description,
                 endpoint_pattern=pattern,
                 compressed_doc=compressed,
                 path_prefix=prefix,
