@@ -1,6 +1,7 @@
 from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
+from urllib.parse import urlparse
 
 from mcp_massive.index import (
     Endpoint,
@@ -39,7 +40,8 @@ class TestParseLlmsTxt:
         entries = parse_llms_txt(llms_txt())
         first = entries[0]
         assert first["name"] == "Custom Bars (OHLC)"
-        assert "massive.com" in first["url"]
+        parsed_url = urlparse(first["url"])
+        assert parsed_url.hostname == "massive.com"
         assert "OHLC" in first["description"]
         assert first["market"] == "Stocks"
 
