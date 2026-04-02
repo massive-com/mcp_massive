@@ -9,7 +9,6 @@ from mcp_massive.index import Endpoint, EndpointIndex
 from mcp_massive.functions import FunctionIndex
 from mcp_massive.server import (
     search_endpoints,
-    get_endpoint_docs,
     call_api,
     query_data,
     configure_credentials,
@@ -24,30 +23,33 @@ from mcp_massive.store import DataFrameStore
 def _make_test_index():
     endpoints = [
         Endpoint(
-            name="Aggregates Bars",
+            title="Aggregates Bars",
+            method="GET",
+            path="/v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}",
             market="Market Data",
-            url="https://massive.com/docs/aggs",
             description="Get aggregate bars for a stock",
-            endpoint_pattern="GET /v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}",
-            compressed_doc="**Endpoint:** `GET /v2/aggs/ticker/{stocksTicker}/range/...`\n- adjusted (boolean): splits",
+            query_params=[
+                {"name": "adjusted", "type": "boolean", "required": False, "description": "Whether results are adjusted for splits"},
+            ],
             path_prefix="/v2/aggs/ticker/",
         ),
         Endpoint(
-            name="Tickers",
+            title="Tickers",
+            method="GET",
+            path="/v3/reference/tickers",
             market="Reference Data",
-            url="https://massive.com/docs/tickers",
             description="Query all ticker symbols",
-            endpoint_pattern="GET /v3/reference/tickers",
-            compressed_doc="**Endpoint:** `GET /v3/reference/tickers`\n- search (string): search term",
+            query_params=[
+                {"name": "search", "type": "string", "required": False, "description": "Search term"},
+            ],
             path_prefix="/v3/reference/tickers",
         ),
         Endpoint(
-            name="Last Trade",
+            title="Last Trade",
+            method="GET",
+            path="/v2/last/trade/{stocksTicker}",
             market="Market Data",
-            url="https://massive.com/docs/last-trade",
             description="Get the most recent trade for a ticker",
-            endpoint_pattern="GET /v2/last/trade/{stocksTicker}",
-            compressed_doc="**Endpoint:** `GET /v2/last/trade/{stocksTicker}`",
             path_prefix="/v2/last/trade/",
         ),
     ]
@@ -75,24 +77,40 @@ class TestSearchEndpoints:
     async def test_returns_results(self):
         result = await search_endpoints("aggregate bars")
         assert "Aggregates" in result
-        assert "Docs:" in result
+        assert "/v2/aggs/ticker/" in result
 
     @pytest.mark.asyncio
     async def test_no_results(self):
         result = await search_endpoints("xyznonexistent")
         assert "No matching endpoints found" in result
 
-
-class TestGetEndpointDocs:
     @pytest.mark.asyncio
-    async def test_returns_cached_doc(self):
-        result = await get_endpoint_docs("https://massive.com/docs/aggs")
+    async def test_max_results(self):
+        result = await search_endpoints("data", max_results=1)
+        # Should have at most 1 numbered result
+        assert "2." not in result
+
+    @pytest.mark.asyncio
+    async def test_detail_default(self):
+        result = await search_endpoints("aggregate bars")
+        assert "Aggregates" in result
+        assert "Market Data" in result
+        assert "/v2/aggs/ticker/" in result
+        assert "Query Parameters:" not in result
+
+    @pytest.mark.asyncio
+    async def test_detail_more(self):
+        result = await search_endpoints("aggregate bars", detail="more")
+        assert "Aggregates" in result
         assert "adjusted" in result
+        assert "Query Parameters:" in result
+        assert "Response Attributes:" not in result
 
     @pytest.mark.asyncio
-    async def test_unknown_url(self):
-        result = await get_endpoint_docs("https://massive.com/docs/nonexistent")
-        assert "Error" in result
+    async def test_detail_verbose(self):
+        result = await search_endpoints("aggregate bars", detail="verbose")
+        assert "Aggregates" in result
+        assert "Query Parameters:" in result
 
 
 class TestCallApi:
@@ -426,8 +444,8 @@ class TestSearchEndpointsScope:
     async def test_scope_functions_only(self):
         result = await search_endpoints("delta", scope="functions")
         assert "(function)" in result
-        # Should not contain endpoint docs links
-        assert "Docs:" not in result
+        # Should not contain endpoint path patterns
+        assert "/v2/" not in result
 
     @pytest.mark.asyncio
     async def test_scope_all(self):

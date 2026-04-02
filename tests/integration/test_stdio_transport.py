@@ -35,7 +35,6 @@ class TestStdioTransport:
                 names = {t.name for t in result.tools}
                 assert names == {
                     "search_endpoints",
-                    "get_endpoint_docs",
                     "call_api",
                     "query_data",
                 }
@@ -102,31 +101,25 @@ class TestStdioTransport:
 
     @pytest.mark.asyncio
     async def test_full_workflow(self, server_params):
-        """search → docs → call → store → query"""
+        """search (with params) → call → store → query"""
         async with stdio_client(server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
-                # 1. Search
+                # 1. Search with detail=more to get query param docs inline
                 search = await session.call_tool(
                     "search_endpoints",
-                    {"query": "stock aggregates bars", "scope": "endpoints"},
+                    {
+                        "query": "stock aggregates bars",
+                        "scope": "endpoints",
+                        "detail": "more",
+                    },
                 )
                 search_text = get_text(search)
                 assert "Aggregates" in search_text
+                assert "Query Parameters:" in search_text
 
-                # 2. Get docs
-                url = ""
-                for line in search_text.split("\n"):
-                    if "Docs:" in line:
-                        url = line.split("Docs:")[1].strip()
-                        break
-                assert url, "No Docs: URL found"
-
-                docs = await session.call_tool("get_endpoint_docs", {"url": url})
-                assert "Endpoint:" in get_text(docs)
-
-                # 3. Call API + store
+                # 2. Call API + store
                 call = await session.call_tool(
                     "call_api",
                     {
@@ -137,7 +130,7 @@ class TestStdioTransport:
                 )
                 assert "Stored" in get_text(call)
 
-                # 4. Query
+                # 3. Query
                 query = await session.call_tool(
                     "query_data",
                     {"sql": "SELECT COUNT(*) as cnt FROM workflow_prices"},

@@ -84,7 +84,6 @@ class TestHttpTransport:
                 names = {t.name for t in result.tools}
                 assert names == {
                     "search_endpoints",
-                    "get_endpoint_docs",
                     "call_api",
                     "query_data",
                 }
