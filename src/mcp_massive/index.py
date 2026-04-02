@@ -20,16 +20,6 @@ _snowball = snowballstemmer.stemmer("english")
 _STOPWORDS = frozenset(STOPWORDS_EN)
 
 
-class Endpoint(BaseModel):
-    name: str = Field(min_length=1)
-    market: str
-    url: str
-    description: str
-    endpoint_pattern: str
-    compressed_doc: str
-    path_prefix: str
-
-
 class QueryParam(BaseModel):
     name: str
     type: str
@@ -43,15 +33,39 @@ class ResponseAttribute(BaseModel):
     description: str
 
 
-class ParsedEndpoint(BaseModel):
-    title: str
+class Endpoint(BaseModel):
+    title: str = Field(min_length=1)
     path: str
     method: str
     market: str
     description: str
-    query_params: list[QueryParam]
-    response_attributes: list[ResponseAttribute]
-    sample_response: str
+    query_params: list[QueryParam] = []
+    response_attributes: list[ResponseAttribute] = []
+    sample_response: str = ""
+    # Set during indexing
+    path_prefix: str = ""
+
+    def format(self, detail: str = "default", counter: int = 1) -> str:
+        """Format this endpoint for search results at the given detail level."""
+        parts = [f"{counter}. {self.title} [{self.market}]"]
+        parts.append(f"   {self.method} {self.path}")
+        parts.append(f"   {self.description}")
+
+        if detail in ("more", "verbose") and self.query_params:
+            parts.append("   Query Parameters:")
+            for qp in self.query_params:
+                req = "required" if qp.required else "optional"
+                parts.append(f"   - {qp.name} ({qp.type}, {req}): {qp.description}")
+
+        if detail == "verbose":
+            if self.response_attributes:
+                parts.append("   Response Attributes:")
+                for ra in self.response_attributes:
+                    parts.append(f"   - {ra.name} ({ra.type}): {ra.description}")
+            if self.sample_response:
+                parts.append(f"   Sample Response:\n   ```json\n   {self.sample_response}\n   ```")
+
+        return "\n".join(parts)
 
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -244,13 +258,13 @@ def _tokenize(text: str) -> list[str]:
 
 def _build_corpus_text(ep: Endpoint) -> str:
     """Build enriched corpus text for an endpoint with field weighting."""
-    # Repeat name 3x and market 2x for BM25F-like field weighting
-    parts = [ep.name, ep.name, ep.name, ep.market, ep.market, ep.description]
+    # Repeat title 3x and market 2x for BM25F-like field weighting
+    parts = [ep.title, ep.title, ep.title, ep.market, ep.market, ep.description]
     # Extract camelCase path param tokens: {stocksTicker} -> "stocks", "ticker"
-    for param in re.findall(r"\{(\w+)\}", ep.endpoint_pattern):
+    for param in re.findall(r"\{(\w+)\}", ep.path):
         parts.extend(re.findall(r"[a-z]+", param))
     # Extract meaningful path segments (skip version prefixes and param placeholders)
-    for seg in ep.endpoint_pattern.split("/"):
+    for seg in ep.path.split("/"):
         if (
             seg
             and not seg.startswith("{")
@@ -258,10 +272,6 @@ def _build_corpus_text(ep: Endpoint) -> str:
             and len(seg) > 2
         ):
             parts.append(seg)
-    # Extract asset class from doc URL: .../rest/stocks/... -> "stocks"
-    url_match = re.search(r"/rest/(\w+)/", ep.url)
-    if url_match:
-        parts.append(url_match.group(1))
     return " ".join(parts)
 
 
@@ -277,9 +287,6 @@ def _detect_market(query: str) -> str | None:
 class EndpointIndex:
     def __init__(self, endpoints: list[Endpoint]):
         self._endpoints = endpoints
-        self._doc_cache: dict[str, str] = {
-            ep.url: ep.compressed_doc for ep in endpoints
-        }
 
         # Build market array for weight_mask
         self._markets = [ep.market for ep in endpoints]
@@ -331,9 +338,6 @@ class EndpointIndex:
     def is_path_allowed(self, path: str) -> bool:
         return any(pat.search(path) for pat in self._prefix_patterns)
 
-    def get_doc(self, url: str) -> str | None:
-        return self._doc_cache.get(url)
-
 
 def parse_llms_txt(text: str) -> list[dict]:
     entries = []
@@ -358,10 +362,6 @@ def parse_llms_txt(text: str) -> list[dict]:
             )
     return entries
 
-
-def _slugify(text: str) -> str:
-    """Convert text to a URL-friendly slug."""
-    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
 
 
 _BULLET_PARAM_RE = re.compile(r"^-\s+\*{0,2}(\w+)\*{0,2}\s*\(([^)]+)\)(?::\s*(.*))?$")
@@ -458,8 +458,8 @@ def parse_response_attributes(section: str) -> list[ResponseAttribute]:
 _STRUCTURAL_SECTIONS = {"Query Parameters", "Response Attributes", "Sample Response"}
 
 
-def parse_endpoint_section(section: str) -> ParsedEndpoint | None:
-    """Parse a single ``---``-delimited doc section into a :class:`ParsedEndpoint`."""
+def parse_endpoint_section(section: str) -> Endpoint | None:
+    """Parse a single ``---``-delimited doc section into a :class:`Endpoint`."""
     ep_match = re.search(r"\*\*Endpoint:\*\*\s*`(\w+)\s+(.+?)`", section)
     if not ep_match:
         return None
@@ -492,7 +492,7 @@ def parse_endpoint_section(section: str) -> ParsedEndpoint | None:
     )
     sample_response = sample_match.group(1).strip() if sample_match else ""
 
-    return ParsedEndpoint(
+    return Endpoint(
         title=title,
         path=path,
         method=method,
@@ -504,26 +504,15 @@ def parse_endpoint_section(section: str) -> ParsedEndpoint | None:
     )
 
 
-def parse_llms_full_txt(text: str) -> list[ParsedEndpoint]:
-    """Parse the combined llms-full.txt into per-endpoint :class:`ParsedEndpoint` objects."""
+def parse_llms_full_txt(text: str) -> list[Endpoint]:
+    """Parse the combined llms-full.txt into per-endpoint :class:`Endpoint` objects."""
     sections = [s for s in text.split("\n---\n") if s.strip()]
-    entries: list[ParsedEndpoint] = []
+    entries: list[Endpoint] = []
     for section in sections:
         ep = parse_endpoint_section(section)
         if ep:
             entries.append(ep)
     return entries
-
-
-def _compressed_doc(ep: ParsedEndpoint) -> str:
-    """Build a compressed doc string from structured endpoint data."""
-    lines = [f"**Endpoint:** `{ep.method} {ep.path}`"]
-    if ep.query_params:
-        lines.append("## Query Parameters")
-        for qp in ep.query_params:
-            req = "required" if qp.required else "optional"
-            lines.append(f"- {qp.name} ({qp.type}, {req}): {qp.description}")
-    return "\n".join(lines)
 
 
 def _path_prefix(path: str) -> str:
@@ -551,35 +540,18 @@ async def build_index(llms_txt_url: str | None = None) -> EndpointIndex:
             logger.error("Error fetching %s: %s", llms_txt_url, e)
             return EndpointIndex([])
 
-    parsed = parse_llms_full_txt(full_text)
-    logger.info("Found %d endpoints in llms-full.txt", len(parsed))
+    endpoints = parse_llms_full_txt(full_text)
+    logger.info("Found %d endpoints in llms-full.txt", len(endpoints))
 
-    # Build endpoints
-    endpoints = []
-    for ep in parsed:
-        # Filter deprecated endpoints
+    # Filter deprecated and set derived fields
+    kept: list[Endpoint] = []
+    for ep in endpoints:
         if "(Deprecated)" in ep.title:
             logger.info("Skipping deprecated endpoint: %s", ep.title)
             continue
 
-        pattern = f"{ep.method} {ep.path}"
-        prefix = _path_prefix(ep.path)
-        compressed = _compressed_doc(ep)
-        cat_slug = _slugify(ep.market) if ep.market else "general"
-        name_slug = _slugify(ep.title)
-        url = f"https://massive.com/docs/rest/{cat_slug}/{name_slug}"
+        ep.path_prefix = _path_prefix(ep.path)
+        kept.append(ep)
 
-        endpoints.append(
-            Endpoint(
-                name=ep.title,
-                market=ep.market,
-                url=url,
-                description=ep.description,
-                endpoint_pattern=pattern,
-                compressed_doc=compressed,
-                path_prefix=prefix,
-            )
-        )
-
-    logger.info("Indexed %d endpoints successfully", len(endpoints))
-    return EndpointIndex(endpoints)
+    logger.info("Indexed %d endpoints successfully", len(kept))
+    return EndpointIndex(kept)

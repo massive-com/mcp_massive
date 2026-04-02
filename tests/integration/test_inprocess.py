@@ -15,12 +15,11 @@ import pytest
 
 class TestToolDiscovery:
     @pytest.mark.asyncio
-    async def test_list_tools_returns_four_tools(self, mcp_session):
+    async def test_list_tools_returns_three_tools(self, mcp_session):
         result = await mcp_session.list_tools()
         names = {t.name for t in result.tools}
         assert names == {
             "search_endpoints",
-            "get_endpoint_docs",
             "call_api",
             "query_data",
         }
@@ -112,41 +111,63 @@ class TestSearchEndpoints:
         )
         text = result.content[0].text
         assert "(function)" in text
-        assert "Docs:" not in text
-
-
-# ---------------------------------------------------------------------------
-# get_endpoint_docs
-# ---------------------------------------------------------------------------
-
-
-class TestGetEndpointDocs:
-    @pytest.mark.asyncio
-    async def test_valid_url(self, mcp_session, mock_server):
-        # First search to find a valid URL
-        search_result = await mcp_session.call_tool(
-            "search_endpoints", {"query": "stock aggregates bars", "scope": "endpoints"}
-        )
-        text = search_result.content[0].text
-        # Extract the docs URL from the search result
-        url = ""
-        for line in text.split("\n"):
-            if "Docs:" in line:
-                url = line.split("Docs:")[1].strip()
-                break
-        assert url, "No Docs: URL found in search results"
-
-        result = await mcp_session.call_tool("get_endpoint_docs", {"url": url})
-        doc_text = result.content[0].text
-        assert "Endpoint:" in doc_text
+        assert "/v2/" not in text
 
     @pytest.mark.asyncio
-    async def test_invalid_url(self, mcp_session):
+    async def test_detail_default(self, mcp_session):
+        """Default detail level returns title, path, description but no query params."""
         result = await mcp_session.call_tool(
-            "get_endpoint_docs", {"url": "https://example.com/nonexistent"}
+            "search_endpoints",
+            {"query": "stock aggregates bars", "scope": "endpoints", "max_results": 1},
         )
         text = result.content[0].text
-        assert "Error" in text
+        assert not result.isError
+        assert "Aggregates" in text or "Bars" in text
+        assert "Query Parameters:" not in text
+
+    @pytest.mark.asyncio
+    async def test_detail_more(self, mcp_session):
+        """detail=more includes query parameter documentation."""
+        result = await mcp_session.call_tool(
+            "search_endpoints",
+            {
+                "query": "stock aggregates bars",
+                "scope": "endpoints",
+                "max_results": 1,
+                "detail": "more",
+            },
+        )
+        text = result.content[0].text
+        assert not result.isError
+        assert "Query Parameters:" in text
+        assert "Response Attributes:" not in text
+
+    @pytest.mark.asyncio
+    async def test_detail_verbose(self, mcp_session):
+        """detail=verbose includes full documentation."""
+        result = await mcp_session.call_tool(
+            "search_endpoints",
+            {
+                "query": "stock aggregates bars",
+                "scope": "endpoints",
+                "max_results": 1,
+                "detail": "verbose",
+            },
+        )
+        text = result.content[0].text
+        assert not result.isError
+        assert "Query Parameters:" in text
+        assert "Response Attributes:" in text
+
+    @pytest.mark.asyncio
+    async def test_max_results_limits_output(self, mcp_session):
+        result = await mcp_session.call_tool(
+            "search_endpoints",
+            {"query": "aggregates", "scope": "endpoints", "max_results": 1},
+        )
+        text = result.content[0].text
+        assert "1." in text
+        assert "2." not in text
 
 
 # ---------------------------------------------------------------------------
