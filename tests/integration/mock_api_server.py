@@ -13,7 +13,7 @@ from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.routing import Route
 
 from . import responses as R
-from .mock_llms_txt import DOC_PAGES, llms_txt
+from .mock_llms_txt import llms_partial_txt
 
 
 def _aggs_handler(request: Request) -> JSONResponse:
@@ -59,17 +59,8 @@ def _tickers_handler(request: Request) -> JSONResponse:
     return JSONResponse(R.TICKERS_RESPONSE)
 
 
-def _llms_txt_handler(request: Request) -> PlainTextResponse:
-    base = str(request.base_url).rstrip("/")
-    return PlainTextResponse(llms_txt(base))
-
-
-def _doc_page_handler(request: Request) -> PlainTextResponse:
-    path = request.url.path
-    content = DOC_PAGES.get(path)
-    if content is None:
-        return PlainTextResponse("Not found", status_code=404)
-    return PlainTextResponse(content)
+def _llms_full_txt_handler(request: Request) -> PlainTextResponse:
+    return PlainTextResponse(llms_partial_txt())
 
 
 def create_app() -> Starlette:
@@ -88,12 +79,9 @@ def create_app() -> Starlette:
         ),
         Route("/v3/snapshot/options/{ticker}", _options_chain_handler),
         Route("/v3/reference/tickers", _tickers_handler),
-        # llms.txt and doc pages
-        Route("/docs/rest/llms.txt", _llms_txt_handler),
+        # llms-full.txt
+        Route("/docs/rest/llms-full.txt", _llms_full_txt_handler),
     ]
-    # Add doc page routes
-    for path in DOC_PAGES:
-        routes.append(Route(path, _doc_page_handler))
     return Starlette(routes=routes)
 
 

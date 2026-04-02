@@ -1,0 +1,833 @@
+> For the full documentation index, see: https://massive.com/docs/llms.txt
+
+# REST API
+
+## Crypto
+
+# REST
+## Crypto
+
+### Custom Bars (OHLC)
+
+**Endpoint:** `GET /v2/aggs/ticker/{cryptoTicker}/range/{multiplier}/{timespan}/{from}/{to}`
+
+**Description:**
+
+Retrieve aggregated historical OHLC (Open, High, Low, Close) and volume data for a specified cryptocurrency pair over a custom date range and time interval in Coordinated Universal Time (UTC). These aggregates are derived from qualifying crypto trades that meet specific conditions. If no eligible trades occur within a given timeframe, no aggregate bar is generated, resulting in an empty interval that transparently indicates a period without trading activity. Users can adjust the multiplier and timespan parameters (e.g., a 5-minute bar) to tailor their analysis. This flexibility supports a wide range of analytical and visualization needs within the crypto markets.
+
+Use Cases: Data visualization, technical analysis, backtesting strategies, market research.
+
+## Query Parameters
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `cryptoTicker` | string | Yes | The ticker symbol of the currency pair. |
+| `multiplier` | integer | Yes | The size of the timespan multiplier. |
+| `timespan` | string | Yes | The size of the time window. |
+| `from` | string | Yes | The start of the aggregate time window. Either a date with the format YYYY-MM-DD or a millisecond timestamp. |
+| `to` | string | Yes | The end of the aggregate time window. Either a date with the format YYYY-MM-DD or a millisecond timestamp. |
+| `adjusted` | boolean | No | Whether or not the results are adjusted for splits.  By default, results are adjusted. Set this to false to get results that are NOT adjusted for splits.  |
+| `sort` | N/A | No | Sort the results by timestamp. `asc` will return results in ascending order (oldest at the top), `desc` will return results in descending order (newest at the top).  |
+| `limit` | integer | No | Limits the number of base aggregates queried to create the aggregate results. Max 50000 and Default 5000. Read more about how limit is used to calculate aggregate results in our article on <a href="https://massive.com/blog/aggs-api-updates/" target="_blank" alt="Aggregate Data API Improvements">Aggregate Data API Improvements</a>.  |
+
+## Response Attributes
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `ticker` | string | The exchange symbol that this item is traded under. |
+| `adjusted` | boolean | Whether or not this response was adjusted for splits. |
+| `queryCount` | integer | The number of aggregates (minute or day) used to generate the response. |
+| `request_id` | string | A request id assigned by the server. |
+| `resultsCount` | integer | The total number of results for this request. |
+| `status` | string | The status of this request's response. |
+| `results` | array[object] | An array of results containing the requested data. |
+| `results[].c` | number | The close price for the symbol in the given time period. |
+| `results[].h` | number | The highest price for the symbol in the given time period. |
+| `results[].l` | number | The lowest price for the symbol in the given time period. |
+| `results[].n` | integer | The number of transactions in the aggregate window. |
+| `results[].o` | number | The open price for the symbol in the given time period. |
+| `results[].t` | integer | The Unix millisecond timestamp for the start of the aggregate window. |
+| `results[].v` | number | The trading volume of the symbol in the given time period. |
+| `results[].vw` | number | The volume weighted average price. |
+
+## Sample Response
+
+```json
+{
+  "adjusted": true,
+  "queryCount": 2,
+  "request_id": "0cf72b6da685bcd386548ffe2895904a",
+  "results": [
+    {
+      "c": 10094.75,
+      "h": 10429.26,
+      "l": 9490,
+      "n": 1,
+      "o": 9557.9,
+      "t": 1590984000000,
+      "v": 303067.6562332156,
+      "vw": 9874.5529
+    },
+    {
+      "c": 9492.62,
+      "h": 10222.72,
+      "l": 9135.68,
+      "n": 1,
+      "o": 10096.87,
+      "t": 1591070400000,
+      "v": 323339.6922892879,
+      "vw": 9729.5701
+    }
+  ],
+  "resultsCount": 2,
+  "status": "OK",
+  "ticker": "X:BTCUSD"
+}
+```
+
+
+---
+
+## Forex
+
+# REST
+## Forex
+
+### Custom Bars (OHLC)
+
+**Endpoint:** `GET /v2/aggs/ticker/{forexTicker}/range/{multiplier}/{timespan}/{from}/{to}`
+
+**Description:**
+
+Retrieve aggregated historical OHLC (Open, High, Low, Close) and volume data for a specified Forex currency pair over a custom date range and time interval in Eastern Time (ET). Unlike stocks or options, these aggregates are generated from quoted bid/ask prices rather than executed trades. If no new quotes occur during a given timeframe, no aggregate bar is produced, resulting in an empty interval that transparently indicates a period without quote updates. Users can customize their data by adjusting the multiplier and timespan parameters (e.g., a 5-minute bar), covering various trading sessions. This approach supports a range of analytical and visualization needs in the Forex market.
+
+Use Cases: Data visualization, technical analysis, backtesting strategies, market research.
+
+## Query Parameters
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `forexTicker` | string | Yes | The ticker symbol of the currency pair. |
+| `multiplier` | integer | Yes | The size of the timespan multiplier. |
+| `timespan` | string | Yes | The size of the time window. |
+| `from` | string | Yes | The start of the aggregate time window. Either a date with the format YYYY-MM-DD or a millisecond timestamp. |
+| `to` | string | Yes | The end of the aggregate time window. Either a date with the format YYYY-MM-DD or a millisecond timestamp. |
+| `adjusted` | boolean | No | Whether or not the results are adjusted for splits.  By default, results are adjusted. Set this to false to get results that are NOT adjusted for splits.  |
+| `sort` | N/A | No | Sort the results by timestamp. `asc` will return results in ascending order (oldest at the top), `desc` will return results in descending order (newest at the top).  |
+| `limit` | integer | No | Limits the number of base aggregates queried to create the aggregate results. Max 50000 and Default 5000. Read more about how limit is used to calculate aggregate results in our article on <a href="https://massive.com/blog/aggs-api-updates/" target="_blank" alt="Aggregate Data API Improvements">Aggregate Data API Improvements</a>.  |
+
+## Response Attributes
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `ticker` | string | The exchange symbol that this item is traded under. |
+| `adjusted` | boolean | Whether or not this response was adjusted for splits. |
+| `queryCount` | integer | The number of aggregates (minute or day) used to generate the response. |
+| `request_id` | string | A request id assigned by the server. |
+| `resultsCount` | integer | The total number of results for this request. |
+| `status` | string | The status of this request's response. |
+| `results` | array[object] | An array of results containing the requested data. |
+| `results[].c` | number | The close price for the symbol in the given time period. |
+| `results[].h` | number | The highest price for the symbol in the given time period. |
+| `results[].l` | number | The lowest price for the symbol in the given time period. |
+| `results[].n` | integer | The number of transactions in the aggregate window. |
+| `results[].o` | number | The open price for the symbol in the given time period. |
+| `results[].t` | integer | The Unix millisecond timestamp for the start of the aggregate window. |
+| `results[].v` | number | The trading volume of the symbol in the given time period. |
+| `results[].vw` | number | The volume weighted average price. |
+
+## Sample Response
+
+```json
+{
+  "adjusted": true,
+  "queryCount": 1,
+  "request_id": "79c061995d8b627b736170bc9653f15d",
+  "results": [
+    {
+      "c": 1.17721,
+      "h": 1.18305,
+      "l": 1.1756,
+      "n": 125329,
+      "o": 1.17921,
+      "t": 1626912000000,
+      "v": 125329,
+      "vw": 1.1789
+    }
+  ],
+  "resultsCount": 1,
+  "status": "OK",
+  "ticker": "C:EURUSD"
+}
+```
+
+
+---
+
+# REST
+## Options
+
+### Option Chain Snapshot
+
+**Endpoint:** `GET /v3/snapshot/options/{underlyingAsset}`
+
+**Description:**
+
+Retrieve a comprehensive snapshot of all options contracts associated with a specified underlying ticker. This endpoint consolidates key metrics for each contract, including pricing details, greeks (delta, gamma, theta, vega), implied volatility, quotes, trades, and open interest. Users also gain insights into the underlying asset’s current price and break-even calculations. By examining the full options chain in a single request, traders and analysts can evaluate market conditions, compare contract attributes, and refine their strategies.
+
+Use Cases: Market overview, strategy comparison, research and modeling, portfolio refinement.
+
+## Query Parameters
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `underlyingAsset` | string | Yes | The underlying ticker symbol of the option contract. |
+| `strike_price` | number | No | Query by strike price of a contract. |
+| `expiration_date` | string | No | Query by contract expiration with date format YYYY-MM-DD. |
+| `contract_type` | string | No | Query by the type of contract. |
+| `strike_price.gte` | number | No | Range by strike_price. |
+| `strike_price.gt` | number | No | Range by strike_price. |
+| `strike_price.lte` | number | No | Range by strike_price. |
+| `strike_price.lt` | number | No | Range by strike_price. |
+| `expiration_date.gte` | string | No | Range by expiration_date. |
+| `expiration_date.gt` | string | No | Range by expiration_date. |
+| `expiration_date.lte` | string | No | Range by expiration_date. |
+| `expiration_date.lt` | string | No | Range by expiration_date. |
+| `order` | string | No | Order results based on the `sort` field. |
+| `limit` | integer | No | Limit the number of results returned, default is 10 and max is 250. |
+| `sort` | string | No | Sort field used for ordering. |
+
+## Response Attributes
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `next_url` | string | If present, this value can be used to fetch the next page of data. |
+| `request_id` | string | A request id assigned by the server. |
+| `results` | array[object] | An array of results containing the requested data. |
+| `results[].break_even_price` | number | The price of the underlying asset for the contract to break even. For a call, this value is (strike price + premium paid). For a put, this value is (strike price - premium paid). |
+| `results[].day` | object | The most recent daily bar for this contract. |
+| `results[].details` | object | The details for this contract. |
+| `results[].fmv` | number | Fair Market Value is only available on Business plans. It is our proprietary algorithm to generate a real-time, accurate, fair market value of a tradable security. For more information, <a rel="nofollow" target="_blank" href="https://massive.com/contact">contact us</a>. |
+| `results[].fmv_last_updated` | integer | If Fair Market Value (FMV) is available, this field is the nanosecond timestamp of the last FMV calculation. |
+| `results[].greeks` | object | The greeks for this contract. There are certain circumstances where greeks will not be returned, such as options contracts that are deep in the money. See this <a href="https://massive.com/blog/greeks-and-implied-volatility/#testing" alt="link">article</a> for more information. |
+| `results[].implied_volatility` | number | The market's forecast for the volatility of the underlying asset, based on this option's current price. |
+| `results[].last_quote` | object | The most recent quote for this contract. This is only returned if your current plan includes quotes. |
+| `results[].last_trade` | object | The most recent trade for this contract. This is only returned if your current plan includes trades. |
+| `results[].open_interest` | number | The quantity of this contract held at the end of the last trading day. |
+| `results[].underlying_asset` | object | Information on the underlying stock for this options contract.  The market data returned depends on your current stocks plan. |
+| `status` | string | The status of this request's response. |
+
+## Sample Response
+
+```json
+{
+  "request_id": "6a7e466379af0a71039d60cc78e72282",
+  "results": [
+    {
+      "break_even_price": 151.2,
+      "day": {
+        "change": 4.5,
+        "change_percent": 6.76,
+        "close": 120.73,
+        "high": 120.81,
+        "last_updated": 1605195918507251700,
+        "low": 118.9,
+        "open": 119.32,
+        "previous_close": 119.12,
+        "volume": 868,
+        "vwap": 119.31
+      },
+      "details": {
+        "contract_type": "call",
+        "exercise_style": "american",
+        "expiration_date": "2022-01-21",
+        "shares_per_contract": 100,
+        "strike_price": 150,
+        "ticker": "O:AAPL211022C000150000"
+      },
+      "fmv": 0.05,
+      "fmv_last_updated": 1605195918508251600,
+      "greeks": {
+        "delta": 1,
+        "gamma": 0,
+        "theta": 0.00229,
+        "vega": 0
+      },
+      "implied_volatility": 5,
+      "last_quote": {
+        "ask": 120.3,
+        "ask_size": 4,
+        "bid": 120.28,
+        "bid_size": 8,
+        "last_updated": 1605195918507251700,
+        "midpoint": 120.29,
+        "timeframe": "REAL-TIME"
+      },
+      "last_trade": {
+        "conditions": [
+          209
+        ],
+        "decimal_size": "2.0",
+        "exchange": 316,
+        "price": 0.05,
+        "sip_timestamp": 1675280958783136800,
+        "size": 2,
+        "timeframe": "REAL-TIME"
+      },
+      "open_interest": 1543,
+      "underlying_asset": {
+        "change_to_break_even": 4.2,
+        "last_updated": 1605195918507251700,
+        "price": 147,
+        "ticker": "AAPL",
+        "timeframe": "DELAYED"
+      }
+    }
+  ],
+  "status": "OK"
+}
+```
+
+
+---
+
+## Stocks
+
+# REST
+## Stocks
+
+### Custom Bars (OHLC)
+
+**Endpoint:** `GET /v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}`
+
+**Description:**
+
+Retrieve aggregated historical OHLC (Open, High, Low, Close) and volume data for a specified stock ticker over a custom date range and time interval in Eastern Time (ET). Aggregates are constructed exclusively from qualifying trades that meet specific conditions. If no eligible trades occur within a given timeframe, no aggregate bar is produced, resulting in an empty interval that indicates a lack of trading activity during that period. Users can tailor their data by adjusting the multiplier and timespan parameters (e.g., a 5-minute bar), covering pre-market, regular market, and after-hours sessions. This flexibility supports a broad range of analytical and visualization needs.
+
+Use Cases: Data visualization, technical analysis, backtesting strategies, market research.
+
+## Query Parameters
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `stocksTicker` | string | Yes | Specify a case-sensitive ticker symbol. For example, AAPL represents Apple Inc. |
+| `multiplier` | integer | Yes | The size of the timespan multiplier. |
+| `timespan` | string | Yes | The size of the time window. |
+| `from` | string | Yes | The start of the aggregate time window. Either a date with the format YYYY-MM-DD or a millisecond timestamp. |
+| `to` | string | Yes | The end of the aggregate time window. Either a date with the format YYYY-MM-DD or a millisecond timestamp. |
+| `adjusted` | boolean | No | Whether or not the results are adjusted for splits.  By default, results are adjusted. Set this to false to get results that are NOT adjusted for splits.  |
+| `sort` | N/A | No | Sort the results by timestamp. `asc` will return results in ascending order (oldest at the top), `desc` will return results in descending order (newest at the top).  |
+| `limit` | integer | No | Limits the number of base aggregates queried to create the aggregate results. Max 50000 and Default 5000. Read more about how limit is used to calculate aggregate results in our article on <a href="https://massive.com/blog/aggs-api-updates/" target="_blank" alt="Aggregate Data API Improvements">Aggregate Data API Improvements</a>.  |
+
+## Response Attributes
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `ticker` | string | The exchange symbol that this item is traded under. |
+| `adjusted` | boolean | Whether or not this response was adjusted for splits. |
+| `queryCount` | integer | The number of aggregates (minute or day) used to generate the response. |
+| `request_id` | string | A request id assigned by the server. |
+| `resultsCount` | integer | The total number of results for this request. |
+| `status` | string | The status of this request's response. |
+| `results` | array[object] | An array of results containing the requested data. |
+| `results[].c` | number | The close price for the symbol in the given time period. |
+| `results[].h` | number | The highest price for the symbol in the given time period. |
+| `results[].l` | number | The lowest price for the symbol in the given time period. |
+| `results[].n` | integer | The number of transactions in the aggregate window. |
+| `results[].o` | number | The open price for the symbol in the given time period. |
+| `results[].otc` | boolean | Whether or not this aggregate is for an OTC ticker. This field will be left off if false. |
+| `results[].t` | integer | The Unix millisecond timestamp for the start of the aggregate window. |
+| `results[].v` | number | The trading volume of the symbol in the given time period. |
+| `results[].vw` | number | The volume weighted average price. |
+| `next_url` | string | If present, this value can be used to fetch the next page of data. |
+
+## Sample Response
+
+```json
+{
+  "adjusted": true,
+  "next_url": "https://api.massive.com/v2/aggs/ticker/AAPL/range/1/day/1578114000000/2020-01-10?cursor=bGltaXQ9MiZzb3J0PWFzYw",
+  "queryCount": 2,
+  "request_id": "6a7e466379af0a71039d60cc78e72282",
+  "results": [
+    {
+      "c": 75.0875,
+      "h": 75.15,
+      "l": 73.7975,
+      "n": 1,
+      "o": 74.06,
+      "t": 1577941200000,
+      "v": 135647456,
+      "vw": 74.6099
+    },
+    {
+      "c": 74.3575,
+      "h": 75.145,
+      "l": 74.125,
+      "n": 1,
+      "o": 74.2875,
+      "t": 1578027600000,
+      "v": 146535512,
+      "vw": 74.7026
+    }
+  ],
+  "resultsCount": 2,
+  "status": "OK",
+  "ticker": "AAPL"
+}
+```
+
+
+---
+
+# REST
+## Stocks
+
+### Single Ticker Snapshot
+
+**Endpoint:** `GET /v2/snapshot/locale/us/markets/stocks/tickers/{stocksTicker}`
+
+**Description:**
+
+Retrieve the most recent market data snapshot for a single ticker. This endpoint consolidates the latest trade, quote, and aggregated data (minute, day, and previous day) for the specified ticker. Snapshot data is cleared at 3:30 AM EST and begins updating as exchanges report new information, which can start as early as 4:00 AM EST. By focusing on a single ticker, users can closely monitor real-time developments and incorporate up-to-date information into trading strategies, alerts, or company-level reporting.
+
+Use Cases: Focused monitoring, real-time analysis, price alerts, investor relations.
+
+## Query Parameters
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `stocksTicker` | string | Yes | Specify a case-sensitive ticker symbol. For example, AAPL represents Apple Inc. |
+
+## Response Attributes
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `status` | string | The status of this request's response. |
+| `request_id` | string | A request id assigned by the server. |
+| `ticker` | object | Contains the requested snapshot data for the specified ticker. |
+| `ticker.day` | object | The most recent daily bar for this ticker. |
+| `ticker.fmv` | number | Fair market value is only available on Business plans. It is our proprietary algorithm to generate a real-time, accurate, fair market value of a tradable security. For more information, <a rel="nofollow" target="_blank" href="https://massive.com/contact">contact us</a>. |
+| `ticker.lastQuote` | object | The most recent quote for this ticker.  This is only returned if your current plan includes quotes. |
+| `ticker.lastTrade` | object | The most recent trade for this ticker.  This is only returned if your current plan includes trades. |
+| `ticker.min` | object | The most recent minute bar for this ticker. |
+| `ticker.prevDay` | object | The previous day's bar for this ticker. |
+| `ticker.ticker` | string | The exchange symbol that this item is traded under. |
+| `ticker.todaysChange` | number | The value of the change from the previous day. |
+| `ticker.todaysChangePerc` | number | The percentage change since the previous day. |
+| `ticker.updated` | integer | The last updated timestamp. |
+
+## Sample Response
+
+```json
+{
+  "request_id": "657e430f1ae768891f018e08e03598d8",
+  "status": "OK",
+  "ticker": {
+    "day": {
+      "c": 120.4229,
+      "dv": "28727868.0",
+      "h": 120.53,
+      "l": 118.81,
+      "o": 119.62,
+      "v": 28727868,
+      "vw": 119.725
+    },
+    "lastQuote": {
+      "P": 120.47,
+      "S": 4,
+      "p": 120.46,
+      "s": 8,
+      "t": 1605195918507251700
+    },
+    "lastTrade": {
+      "c": [
+        14,
+        41
+      ],
+      "ds": "236.0",
+      "i": "4046",
+      "p": 120.47,
+      "s": 236,
+      "t": 1605195918306274000,
+      "x": 10
+    },
+    "min": {
+      "av": 28724441,
+      "c": 120.4201,
+      "dav": "28724441.0",
+      "dv": "270796.0",
+      "h": 120.468,
+      "l": 120.37,
+      "n": 762,
+      "o": 120.435,
+      "t": 1684428720000,
+      "v": 270796,
+      "vw": 120.4129
+    },
+    "prevDay": {
+      "c": 119.49,
+      "h": 119.63,
+      "l": 116.44,
+      "o": 117.19,
+      "v": 110597265,
+      "vw": 118.4998
+    },
+    "ticker": "AAPL",
+    "todaysChange": 0.98,
+    "todaysChangePerc": 0.82,
+    "updated": 1605195918306274000
+  }
+}
+```
+
+
+---
+
+# REST
+## Stocks
+
+### All Tickers
+
+**Endpoint:** `GET /v3/reference/tickers`
+
+**Description:**
+
+Retrieve a comprehensive list of ticker symbols supported by Massive across various asset classes (e.g., stocks, indices, forex, crypto). Each ticker entry provides essential details such as symbol, name, market, currency, and active status.
+
+Use Cases: Asset discovery, data integration, filtering/selection, and application development.
+
+## Query Parameters
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `ticker` | string | No | Specify a ticker symbol. Defaults to empty string which queries all tickers. |
+| `type` | string | No | Specify the type of the tickers. Find the types that we support via our [Ticker Types API](https://massive.com/docs/rest/stocks/tickers/ticker-types). Defaults to empty string which queries all types. |
+| `market` | string | No | Filter by market type. By default all markets are included. |
+| `exchange` | string | No | Specify the asset's primary exchange Market Identifier Code (MIC) according to [ISO 10383](https://www.iso20022.org/market-identifier-codes). Defaults to empty string which queries all exchanges. |
+| `cusip` | string | No | Specify the CUSIP code of the asset you want to search for. Find more information about CUSIP codes [at their website](https://www.cusip.com/identifiers.html#/CUSIP). Defaults to empty string which queries all CUSIPs.  Note: Although you can query by CUSIP, due to legal reasons we do not return the CUSIP in the response. |
+| `cik` | string | No | Specify the CIK of the asset you want to search for. Find more information about CIK codes [at their website](https://www.sec.gov/edgar/searchedgar/cik.htm). Defaults to empty string which queries all CIKs. |
+| `date` | string | No | Specify a point in time to retrieve tickers available on that date. Defaults to the most recent available date. |
+| `search` | string | No | Search for terms within the ticker and/or company name. |
+| `active` | boolean | No | Specify if the tickers returned should be actively traded on the queried date. Default is true. |
+| `ticker.gte` | string | No | Range by ticker. |
+| `ticker.gt` | string | No | Range by ticker. |
+| `ticker.lte` | string | No | Range by ticker. |
+| `ticker.lt` | string | No | Range by ticker. |
+| `order` | string | No | Order results based on the `sort` field. |
+| `limit` | integer | No | Limit the number of results returned, default is 100 and max is 1000. |
+| `sort` | string | No | Sort field used for ordering. |
+
+## Response Attributes
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `count` | integer | The total number of results for this request. |
+| `next_url` | string | If present, this value can be used to fetch the next page of data. |
+| `request_id` | string | A request id assigned by the server. |
+| `results` | array[object] | An array of tickers that match your query.  Note: Although you can query by CUSIP, due to legal reasons we do not return the CUSIP in the response. |
+| `results[].active` | boolean | Whether or not the asset is actively traded. False means the asset has been delisted. |
+| `results[].base_currency_name` | string | The name of the currency that this asset is priced against. |
+| `results[].base_currency_symbol` | string | The ISO 4217 code of the currency that this asset is priced against. |
+| `results[].cik` | string | The CIK number for this ticker. Find more information [here](https://en.wikipedia.org/wiki/Central_Index_Key). |
+| `results[].composite_figi` | string | The composite OpenFIGI number for this ticker. Find more information [here](https://www.openfigi.com/about/figi) |
+| `results[].currency_name` | string | The name of the currency that this asset is traded with. |
+| `results[].currency_symbol` | string | The ISO 4217 code of the currency that this asset is traded with. |
+| `results[].delisted_utc` | string | The last date that the asset was traded. |
+| `results[].last_updated_utc` | string | The information is accurate up to this time. |
+| `results[].locale` | enum: us, global | The locale of the asset. |
+| `results[].market` | enum: stocks, crypto, fx, otc, indices | The market type of the asset. |
+| `results[].name` | string | The name of the asset. For stocks/equities this will be the companies registered name. For crypto/fx this will be the name of the currency or coin pair. |
+| `results[].primary_exchange` | string | The ISO code of the primary listing exchange for this asset. |
+| `results[].share_class_figi` | string | The share Class OpenFIGI number for this ticker. Find more information [here](https://www.openfigi.com/about/figi) |
+| `results[].ticker` | string | The exchange symbol that this item is traded under. |
+| `results[].type` | string | The type of the asset. Find the types that we support via our [Ticker Types API](https://massive.com/docs/rest/stocks/tickers/ticker-types). |
+| `status` | string | The status of this request's response. |
+
+## Sample Response
+
+```json
+{
+  "count": 1,
+  "next_url": "https://api.massive.com/v3/reference/tickers?cursor=YWN0aXZlPXRydWUmZGF0ZT0yMDIxLTA0LTI1JmxpbWl0PTEmb3JkZXI9YXNjJnBhZ2VfbWFya2VyPUElN0M5YWRjMjY0ZTgyM2E1ZjBiOGUyNDc5YmZiOGE1YmYwNDVkYzU0YjgwMDcyMWE2YmI1ZjBjMjQwMjU4MjFmNGZiJnNvcnQ9dGlja2Vy",
+  "request_id": "e70013d92930de90e089dc8fa098888e",
+  "results": [
+    {
+      "active": true,
+      "cik": "0001090872",
+      "composite_figi": "BBG000BWQYZ5",
+      "currency_name": "usd",
+      "last_updated_utc": "2021-04-25T00:00:00Z",
+      "locale": "us",
+      "market": "stocks",
+      "name": "Agilent Technologies Inc.",
+      "primary_exchange": "XNYS",
+      "share_class_figi": "BBG001SCTQY4",
+      "ticker": "A",
+      "type": "CS"
+    }
+  ],
+  "status": "OK"
+}
+```
+
+
+---
+
+# REST
+## Stocks
+
+### Last Trade
+
+**Endpoint:** `GET /v2/last/trade/{stocksTicker}`
+
+**Description:**
+
+Retrieve the latest available trade for a specified stock ticker, including details such as price, size, exchange, and timestamp. This endpoint supports monitoring recent trading activity and updating dashboards or applications with the most current trade information, providing timely insights into ongoing market conditions.
+
+Use Cases: Trade monitoring, price updates, market snapshot.
+
+## Query Parameters
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `stocksTicker` | string | Yes | Specify a case-sensitive ticker symbol. For example, AAPL represents Apple Inc. |
+
+## Response Attributes
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `request_id` | string | A request id assigned by the server. |
+| `results` | object | N/A |
+| `results.T` | string | The exchange symbol that this item is traded under. |
+| `results.c` | array[integer] | A list of condition codes. |
+| `results.ds` | string | The size of the trade including the fractional component. This is represented as a decimal string. |
+| `results.e` | integer | The trade correction indicator. |
+| `results.f` | integer | The nanosecond accuracy TRF(Trade Reporting Facility) Unix Timestamp. This is the timestamp of when the trade reporting facility received this message. |
+| `results.i` | string | The Trade ID which uniquely identifies a trade. These are unique per combination of ticker, exchange, and TRF. For example: A trade for AAPL executed on NYSE and a trade for AAPL executed on NASDAQ could potentially have the same Trade ID. |
+| `results.p` | number | The price of the trade. This is the actual dollar value per whole share of this trade. A trade of 100 shares with a price of $2.00 would be worth a total dollar value of $200.00. |
+| `results.q` | integer | The sequence number represents the sequence in which message events happened. These are increasing and unique per ticker symbol, but will not always be sequential (e.g., 1, 2, 6, 9, 10, 11). |
+| `results.r` | integer | The ID for the Trade Reporting Facility where the trade took place. |
+| `results.s` | number | The size of a trade (also known as volume). |
+| `results.t` | integer | The nanosecond accuracy SIP Unix Timestamp. This is the timestamp of when the SIP received this message from the exchange which produced it. |
+| `results.x` | integer | The exchange ID. See <a href="https://massive.com/docs/rest/stocks/market-operations/exchanges" alt="Exchanges">Exchanges</a> for Massive's mapping of exchange IDs. |
+| `results.y` | integer | The nanosecond accuracy Participant/Exchange Unix Timestamp. This is the timestamp of when the quote was actually generated at the exchange. |
+| `results.z` | integer | There are 3 tapes which define which exchange the ticker is listed on. These are integers in our objects which represent the letter of the alphabet. Eg: 1 = A, 2 = B, 3 = C. * Tape A is NYSE listed securities * Tape B is NYSE ARCA / NYSE American * Tape C is NASDAQ |
+| `status` | string | The status of this request's response. |
+
+## Sample Response
+
+```json
+{
+  "request_id": "f05562305bd26ced64b98ed68b3c5d96",
+  "results": {
+    "T": "AAPL",
+    "c": [
+      37
+    ],
+    "ds": "25.0",
+    "f": 1617901342969796400,
+    "i": "118749",
+    "p": 129.8473,
+    "q": 3135876,
+    "r": 202,
+    "s": 25,
+    "t": 1617901342969834000,
+    "x": 4,
+    "y": 1617901342968000000,
+    "z": 3
+  },
+  "status": "OK"
+}
+```
+
+
+---
+
+# REST
+## Stocks
+
+### Quotes
+
+**Endpoint:** `GET /v3/quotes/{stockTicker}`
+
+**Description:**
+
+Retrieve National Best Bid and Offer (NBBO) quotes for a specified stock ticker over a defined time range. Each record includes the prevailing best bid/ask prices, sizes, exchanges, and timestamps, reflecting the top-of-book quote environment at each moment. By examining this historical quote data, users can analyze price movements, evaluate liquidity at the NBBO level, and enhance trading strategies or research efforts.
+
+Use Cases: Historical quote analysis, liquidity evaluation, algorithmic backtesting, trading strategy refinement.
+
+## Query Parameters
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `stockTicker` | string | Yes | Specify a case-sensitive ticker symbol. For example, AAPL represents Apple Inc. |
+| `timestamp` | string | No | Query by timestamp. Either a date with the format YYYY-MM-DD or a nanosecond timestamp. |
+| `timestamp.gte` | string | No | Range by timestamp. |
+| `timestamp.gt` | string | No | Range by timestamp. |
+| `timestamp.lte` | string | No | Range by timestamp. |
+| `timestamp.lt` | string | No | Range by timestamp. |
+| `order` | string | No | Order results based on the `sort` field. |
+| `limit` | integer | No | Limit the number of results returned, default is 1000 and max is 50000. |
+| `sort` | string | No | Sort field used for ordering. |
+
+## Response Attributes
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `next_url` | string | If present, this value can be used to fetch the next page of data. |
+| `request_id` | string | A request id assigned by the server. |
+| `results` | array[object] | An array of results containing the requested data. |
+| `results[].ask_exchange` | integer | The ask exchange ID |
+| `results[].ask_price` | number | The ask price. |
+| `results[].ask_size` | number | The total number of shares available for sale at the current ask price. |
+| `results[].bid_exchange` | integer | The bid exchange ID |
+| `results[].bid_price` | number | The bid price. |
+| `results[].bid_size` | number | The total number of shares that buyers want to purchase at the current bid price. |
+| `results[].conditions` | array[integer] | A list of condition codes. |
+| `results[].indicators` | array[integer] | A list of indicator codes. |
+| `results[].participant_timestamp` | integer | The nanosecond accuracy Participant/Exchange Unix Timestamp. This is the timestamp of when the quote was actually generated at the exchange. |
+| `results[].sequence_number` | integer | The sequence number represents the sequence in which quote events happened. These are increasing and unique per ticker symbol, but will not always be sequential (e.g., 1, 2, 6, 9, 10, 11). Values reset after each trading session/day. |
+| `results[].sip_timestamp` | integer | The nanosecond accuracy SIP Unix Timestamp. This is the timestamp of when the SIP received this quote from the exchange which produced it. |
+| `results[].tape` | integer | There are 3 tapes which define which exchange the ticker is listed on. These are integers in our objects which represent the letter of the alphabet. Eg: 1 = A, 2 = B, 3 = C. * Tape A is NYSE listed securities * Tape B is NYSE ARCA / NYSE American * Tape C is NASDAQ |
+| `results[].trf_timestamp` | integer | The nanosecond accuracy TRF (Trade Reporting Facility) Unix Timestamp. This is the timestamp of when the trade reporting facility received this quote. |
+| `status` | string | The status of this request's response. |
+
+## Sample Response
+
+```json
+{
+  "next_url": "https://api.massive.com/v3/quotes/AAPL?cursor=YWN0aXZlPXRydWUmZGF0ZT0yMDIxLTA0LTI1JmxpbWl0PTEmb3JkZXI9YXNjJnBhZ2VfbWFya2VyPUElN0M5YWRjMjY0ZTgyM2E1ZjBiOGUyNDc5YmZiOGE1YmYwNDVkYzU0YjgwMDcyMWE2YmI1ZjBjMjQwMjU4MjFmNGZiJnNvcnQ9dGlja2Vy",
+  "request_id": "a47d1beb8c11b6ae897ab76cdbbf35a3",
+  "results": [
+    {
+      "ask_exchange": 0,
+      "ask_price": 0,
+      "ask_size": 0,
+      "bid_exchange": 11,
+      "bid_price": 102.7,
+      "bid_size": 60,
+      "conditions": [
+        1
+      ],
+      "participant_timestamp": 1517562000065321200,
+      "sequence_number": 2060,
+      "sip_timestamp": 1517562000065700400,
+      "tape": 3
+    },
+    {
+      "ask_exchange": 0,
+      "ask_price": 0,
+      "ask_size": 0,
+      "bid_exchange": 11,
+      "bid_price": 170,
+      "bid_size": 2,
+      "conditions": [
+        1
+      ],
+      "participant_timestamp": 1517562000065408300,
+      "sequence_number": 2061,
+      "sip_timestamp": 1517562000065791500,
+      "tape": 3
+    }
+  ],
+  "status": "OK"
+}
+```
+
+
+---
+
+# REST
+## Stocks
+
+### Trades
+
+**Endpoint:** `GET /v3/trades/{stockTicker}`
+
+**Description:**
+
+Retrieve comprehensive, tick-level trade data for a specified stock ticker within a defined time range. Each record includes price, size, exchange, trade conditions, and precise timestamp information. This granular data is foundational for constructing aggregated bars and performing in-depth analyses, as it captures every eligible trade that contributes to calculations of open, high, low, and close (OHLC) values. By leveraging these trades, users can refine their understanding of intraday price movements, test and optimize algorithmic strategies, and ensure compliance by maintaining an auditable record of market activity.
+
+Use Cases: Intraday analysis, algorithmic trading, market microstructure research, data integrity and compliance.
+
+## Query Parameters
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `stockTicker` | string | Yes | Specify a case-sensitive ticker symbol. For example, AAPL represents Apple Inc. |
+| `timestamp` | string | No | Query by trade timestamp. Either a date with the format YYYY-MM-DD or a nanosecond timestamp. |
+| `timestamp.gte` | string | No | Range by timestamp. |
+| `timestamp.gt` | string | No | Range by timestamp. |
+| `timestamp.lte` | string | No | Range by timestamp. |
+| `timestamp.lt` | string | No | Range by timestamp. |
+| `order` | string | No | Order results based on the `sort` field. |
+| `limit` | integer | No | Limit the number of results returned, default is 1000 and max is 50000. |
+| `sort` | string | No | Sort field used for ordering. |
+
+## Response Attributes
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `next_url` | string | If present, this value can be used to fetch the next page of data. |
+| `request_id` | string | A request id assigned by the server. |
+| `results` | array[object] | An array of results containing the requested data. |
+| `results[].conditions` | array[integer] | A list of condition codes. |
+| `results[].correction` | integer | The trade correction indicator. |
+| `results[].decimal_size` | string | The size of the trade including the fractional component. This is represented as a decimal string. |
+| `results[].exchange` | integer | The exchange ID. See <a href="https://massive.com/docs/rest/stocks/market-operations/exchanges" alt="Exchanges">Exchanges</a> for Massive's mapping of exchange IDs. |
+| `results[].id` | string | The Trade ID which uniquely identifies a trade. These are unique per combination of ticker, exchange, and TRF. For example: A trade for AAPL executed on NYSE and a trade for AAPL executed on NASDAQ could potentially have the same Trade ID. |
+| `results[].participant_timestamp` | integer | The nanosecond accuracy Participant/Exchange Unix Timestamp. This is the timestamp of when the trade was actually generated at the exchange. |
+| `results[].price` | number | The price of the trade. This is the actual dollar value per whole share of this trade. A trade of 100 shares with a price of $2.00 would be worth a total dollar value of $200.00. |
+| `results[].sequence_number` | integer | The sequence number represents the sequence in which trade events happened. These are increasing and unique per ticker symbol, but will not always be sequential (e.g., 1, 2, 6, 9, 10, 11). Values reset after each trading session/day. |
+| `results[].sip_timestamp` | integer | The nanosecond accuracy SIP Unix Timestamp. This is the timestamp of when the SIP received this trade from the exchange which produced it. |
+| `results[].size` | number | The size of a trade (also known as volume). |
+| `results[].tape` | integer | There are 3 tapes which define which exchange the ticker is listed on. These are integers in our objects which represent the letter of the alphabet. Eg: 1 = A, 2 = B, 3 = C. * Tape A is NYSE listed securities * Tape B is NYSE ARCA / NYSE American * Tape C is NASDAQ |
+| `results[].trf_id` | integer | The ID for the Trade Reporting Facility where the trade took place. |
+| `results[].trf_timestamp` | integer | The nanosecond accuracy TRF (Trade Reporting Facility) Unix Timestamp. This is the timestamp of when the trade reporting facility received this trade. |
+| `status` | string | The status of this request's response. |
+
+## Sample Response
+
+```json
+{
+  "next_url": "https://api.massive.com/v3/trades/AAPL?cursor=YWN0aXZlPXRydWUmZGF0ZT0yMDIxLTA0LTI1JmxpbWl0PTEmb3JkZXI9YXNjJnBhZ2VfbWFya2VyPUElN0M5YWRjMjY0ZTgyM2E1ZjBiOGUyNDc5YmZiOGE1YmYwNDVkYzU0YjgwMDcyMWE2YmI1ZjBjMjQwMjU4MjFmNGZiJnNvcnQ9dGlja2Vy",
+  "request_id": "a47d1beb8c11b6ae897ab76cdbbf35a3",
+  "results": [
+    {
+      "conditions": [
+        12,
+        41
+      ],
+      "decimal_size": "100.0",
+      "exchange": 11,
+      "id": "1",
+      "participant_timestamp": 1517562000015577000,
+      "price": 171.55,
+      "sequence_number": 1063,
+      "sip_timestamp": 1517562000016036600,
+      "size": 100,
+      "tape": 3
+    },
+    {
+      "conditions": [
+        12,
+        41
+      ],
+      "decimal_size": "100.0",
+      "exchange": 11,
+      "id": "2",
+      "participant_timestamp": 1517562000015577600,
+      "price": 171.55,
+      "sequence_number": 1064,
+      "sip_timestamp": 1517562000016038100,
+      "size": 100,
+      "tape": 3
+    }
+  ],
+  "status": "OK"
+}
+```
+
+
+---

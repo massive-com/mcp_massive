@@ -1,91 +1,56 @@
 from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
+from urllib.parse import urlparse
 
 from mcp_massive.index import (
     Endpoint,
     EndpointIndex,
+    ParsedEndpoint,
+    QueryParam,
+    ResponseAttribute,
     parse_llms_txt,
-    extract_endpoint_pattern,
-    extract_path_prefix,
-    compress_doc,
+    parse_llms_full_txt,
+    parse_endpoint_section,
+    parse_query_params,
+    parse_response_attributes,
+    parse_table_rows,
     build_index,
     _stem,
     _tokenize,
     _build_corpus_text,
-    _detect_category,
+    _detect_market,
+    _slugify,
+    _compressed_doc,
+    _path_prefix,
 )
-
-
-SAMPLE_LLMS_TXT = """\
-# Massive.com API
-
-> API documentation for Massive.com
-
-## Market Data
-
-- [Aggregates (Bars)](https://massive.com/docs/aggs): Get aggregate bars for a stock.
-- [Grouped Daily](https://massive.com/docs/grouped): Get grouped daily bars for the market.
-
-## Reference Data
-
-- [Tickers](https://massive.com/docs/tickers): Query all ticker symbols.
-"""
-
-SAMPLE_DOC_PAGE = """\
-# Aggregates (Bars)
-
-Get aggregate bars for a stock over a given date range.
-
-**Endpoint:** `GET /v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}`
-
-## Query Parameters
-
-- adjusted (boolean, optional): Whether results are adjusted for splits.
-- sort (string, optional): Sort order of results. asc or desc.
-- limit (integer, optional): Limits number of results. Default 5000, max 50000.
-
-## Response Attributes
-
-- ticker (string): The exchange symbol.
-- adjusted (boolean): Whether results are adjusted.
-- results (array): Array of result objects.
-
-## Sample Response
-
-```json
-{
-  "ticker": "AAPL",
-  "results": [{"o": 130.28, "c": 129.04}]
-}
-```
-"""
-
-SAMPLE_DOC_NO_PARAMS = """\
-# Market Holidays
-
-**Endpoint:** `GET /v1/marketstatus/upcoming`
-"""
+from tests.integration.mock_llms_txt import (
+    aggs_section,
+    llms_partial_txt,
+    llms_txt,
+)
 
 
 class TestParseLlmsTxt:
     def test_parses_entries(self):
-        entries = parse_llms_txt(SAMPLE_LLMS_TXT)
-        assert len(entries) == 3
+        entries = parse_llms_txt(llms_txt())
+        assert len(entries) == 4
 
     def test_entry_fields(self):
-        entries = parse_llms_txt(SAMPLE_LLMS_TXT)
-        aggs = entries[0]
-        assert aggs["name"] == "Aggregates (Bars)"
-        assert aggs["url"] == "https://massive.com/docs/aggs"
-        assert aggs["description"] == "Get aggregate bars for a stock."
-        assert aggs["category"] == "Market Data"
+        entries = parse_llms_txt(llms_txt())
+        first = entries[0]
+        assert first["name"] == "Custom Bars (OHLC)"
+        parsed_url = urlparse(first["url"])
+        assert parsed_url.hostname == "massive.com"
+        assert "OHLC" in first["description"]
+        assert first["market"] == "Stocks"
 
-    def test_category_tracking(self):
-        entries = parse_llms_txt(SAMPLE_LLMS_TXT)
-        assert entries[0]["category"] == "Market Data"
-        assert entries[1]["category"] == "Market Data"
-        assert entries[2]["category"] == "Reference Data"
+    def test_market_tracking(self):
+        entries = parse_llms_txt(llms_txt())
+        assert entries[0]["market"] == "Stocks"
+        assert entries[1]["market"] == "Stocks"
+        assert entries[2]["market"] == "Stocks"
+        assert entries[3]["market"] == "Options"
 
     def test_empty_input(self):
         assert parse_llms_txt("") == []
@@ -94,67 +59,299 @@ class TestParseLlmsTxt:
         assert parse_llms_txt("# Just a title\n\nSome text.") == []
 
 
-class TestExtractEndpointPattern:
-    def test_standard_pattern(self):
-        result = extract_endpoint_pattern(SAMPLE_DOC_PAGE)
-        assert (
-            result
-            == "GET /v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}"
+class TestParseEndpointSection:
+    def test_parses_standard_section(self):
+        ep = parse_endpoint_section(aggs_section())
+        assert ep is not None
+        assert ep.title == "Custom Bars (OHLC)"
+        assert ep.method == "GET"
+        assert "/v2/aggs/ticker/{stocksTicker}" in ep.path
+        assert ep.market == "Stocks"
+
+    def test_extracts_description(self):
+        ep = parse_endpoint_section(aggs_section())
+        assert ep is not None
+        assert "OHLC" in ep.description
+
+    def test_extracts_query_params(self):
+        ep = parse_endpoint_section(aggs_section())
+        assert ep is not None
+        assert len(ep.query_params) == 8
+        assert ep.query_params[0].name == "stocksTicker"
+        assert ep.query_params[0].type == "string"
+        assert ep.query_params[0].required is True
+        # Optional params too
+        param_names = {qp.name for qp in ep.query_params}
+        assert "adjusted" in param_names
+        assert "sort" in param_names
+        assert "limit" in param_names
+
+    def test_extracts_response_attributes(self):
+        ep = parse_endpoint_section(aggs_section())
+        assert ep is not None
+        assert len(ep.response_attributes) > 5
+        assert ep.response_attributes[0].name == "ticker"
+
+    def test_extracts_sample_response(self):
+        ep = parse_endpoint_section(aggs_section())
+        assert ep is not None
+        assert '"AAPL"' in ep.sample_response
+
+    def test_returns_none_without_endpoint(self):
+        assert parse_endpoint_section("No endpoint here.") is None
+
+    def test_no_params_section(self):
+        section = """\
+## Reference
+
+### Market Holidays
+
+**Endpoint:** `GET /v1/marketstatus/upcoming`
+"""
+        ep = parse_endpoint_section(section)
+        assert ep is not None
+        assert ep.title == "Market Holidays"
+        assert ep.market == "Reference"
+        assert ep.query_params == []
+        assert ep.response_attributes == []
+
+
+class TestParseQueryParams:
+    def test_bullet_format(self):
+        section = """\
+## Query Parameters
+
+- adjusted (boolean, optional): Whether results are adjusted.
+- sort (string, required): Sort order.
+"""
+        params = parse_query_params(section)
+        assert len(params) == 2
+        assert params[0].name == "adjusted"
+        assert params[0].type == "boolean"
+        assert params[0].required is False
+        assert params[1].name == "sort"
+        assert params[1].required is True
+
+    def test_bold_bullet_format(self):
+        section = """\
+## Query Parameters
+
+- **adjusted** (boolean): Whether results are adjusted.
+"""
+        params = parse_query_params(section)
+        assert len(params) == 1
+        assert params[0].name == "adjusted"
+
+    def test_table_format(self):
+        section = """\
+## Query Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| adjusted | boolean | No | Whether results are adjusted. |
+| sort | string | Yes | Sort order. |
+"""
+        params = parse_query_params(section)
+        assert len(params) == 2
+        assert params[0].name == "adjusted"
+        assert params[0].required is False
+        assert params[1].name == "sort"
+        assert params[1].required is True
+
+    def test_no_section(self):
+        assert parse_query_params("No params here.") == []
+
+
+class TestParseResponseAttributes:
+    def test_bullet_format(self):
+        section = """\
+## Response Attributes
+
+- ticker (string): The exchange symbol.
+- adjusted (boolean): Whether results are adjusted.
+"""
+        attrs = parse_response_attributes(section)
+        assert len(attrs) == 2
+        assert attrs[0].name == "ticker"
+        assert attrs[0].type == "string"
+
+    def test_table_format(self):
+        section = """\
+## Response Attributes
+
+| Field | Type | Description |
+|-------|------|-------------|
+| ticker | string | The exchange symbol. |
+"""
+        attrs = parse_response_attributes(section)
+        assert len(attrs) == 1
+        assert attrs[0].name == "ticker"
+
+    def test_no_section(self):
+        assert parse_response_attributes("No attrs here.") == []
+
+
+class TestParseTableRows:
+    def test_basic_table(self):
+        text = """\
+## Query Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| adjusted | boolean | No | Whether adjusted. |
+"""
+        rows = parse_table_rows(text, "Query Parameters")
+        assert len(rows) == 1
+        assert rows[0]["parameter"] == "adjusted"
+
+    def test_no_table(self):
+        assert parse_table_rows("No table here.", "Query Parameters") == []
+
+
+class TestParseLlmsFullTxt:
+    def test_parses_entries(self):
+        entries = parse_llms_full_txt(llms_partial_txt())
+        assert len(entries) == 9
+
+    def test_entry_fields(self):
+        entries = parse_llms_full_txt(llms_partial_txt())
+        first = entries[0]
+        assert first.title == "Custom Bars (OHLC)"
+        assert first.market == "Crypto"
+        assert first.method == "GET"
+        assert "/v2/aggs/ticker/" in first.path
+
+    def test_market_tracking(self):
+        entries = parse_llms_full_txt(llms_partial_txt())
+        markets = [e.market for e in entries]
+        assert "Crypto" in markets
+        assert "Forex" in markets
+        assert "Options" in markets
+        assert "Stocks" in markets
+
+    def test_description_extracted(self):
+        entries = parse_llms_full_txt(llms_partial_txt())
+        assert "OHLC" in entries[0].description
+
+    def test_empty_input(self):
+        assert parse_llms_full_txt("") == []
+
+    def test_no_entries(self):
+        assert parse_llms_full_txt("# Just a title\n\nSome text.") == []
+
+    def test_query_params_parsed(self):
+        entries = parse_llms_full_txt(llms_partial_txt())
+        assert len(entries[0].query_params) > 0
+        param_names = {qp.name for qp in entries[0].query_params}
+        assert "cryptoTicker" in param_names
+
+    def test_entries_independent(self):
+        """Each entry should only contain its own params."""
+        entries = parse_llms_full_txt(llms_partial_txt())
+        # First entry (Crypto) should not contain Stocks params
+        first_param_names = {qp.name for qp in entries[0].query_params}
+        assert "stocksTicker" not in first_param_names
+
+
+class TestSlugify:
+    def test_basic(self):
+        assert _slugify("Market Data") == "market-data"
+
+    def test_special_chars(self):
+        assert _slugify("Aggregates (Bars)") == "aggregates-bars"
+
+    def test_multiple_spaces(self):
+        assert _slugify("Reference   Data") == "reference-data"
+
+    def test_leading_trailing(self):
+        assert _slugify("  hello world  ") == "hello-world"
+
+    def test_empty(self):
+        assert _slugify("") == ""
+
+
+class TestCompressedDoc:
+    def test_includes_endpoint_pattern(self):
+        ep = ParsedEndpoint(
+            title="Test",
+            path="/v2/aggs/ticker/{stocksTicker}",
+            method="GET",
+            market="Stocks",
+            description="Test endpoint.",
+            query_params=[
+                QueryParam(
+                    name="adjusted",
+                    type="boolean",
+                    required=False,
+                    description="Whether adjusted.",
+                ),
+            ],
+            response_attributes=[],
+            sample_response="",
         )
+        compressed = _compressed_doc(ep)
+        assert "GET /v2/aggs/ticker/{stocksTicker}" in compressed
 
-    def test_no_params_pattern(self):
-        result = extract_endpoint_pattern(SAMPLE_DOC_NO_PARAMS)
-        assert result == "GET /v1/marketstatus/upcoming"
-
-    def test_no_pattern_found(self):
-        result = extract_endpoint_pattern("No endpoint here.")
-        assert result == ""
-
-
-class TestExtractPathPrefix:
-    def test_path_with_params(self):
-        prefix = extract_path_prefix(
-            "GET /v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}"
+    def test_includes_query_params(self):
+        ep = ParsedEndpoint(
+            title="Test",
+            path="/v2/aggs",
+            method="GET",
+            market="Stocks",
+            description="Test.",
+            query_params=[
+                QueryParam(
+                    name="adjusted",
+                    type="boolean",
+                    required=False,
+                    description="Whether adjusted.",
+                ),
+                QueryParam(
+                    name="sort",
+                    type="string",
+                    required=False,
+                    description="Sort order.",
+                ),
+            ],
+            response_attributes=[],
+            sample_response="",
         )
-        assert prefix == "/v2/aggs/ticker/"
-
-    def test_crypto_path(self):
-        prefix = extract_path_prefix("GET /v1/last/crypto/{from}/{to}")
-        assert prefix == "/v1/last/crypto/"
-
-    def test_no_params(self):
-        prefix = extract_path_prefix("GET /v3/reference/tickers")
-        assert prefix == "/v3/reference/tickers"
-
-    def test_no_method_prefix(self):
-        prefix = extract_path_prefix("/v2/aggs/ticker/{ticker}/prev")
-        assert prefix == "/v2/aggs/ticker/"
-
-
-class TestCompressDoc:
-    def test_retains_endpoint_pattern(self):
-        compressed = compress_doc(SAMPLE_DOC_PAGE)
-        assert "GET /v2/aggs/ticker/" in compressed
-
-    def test_retains_query_params(self):
-        compressed = compress_doc(SAMPLE_DOC_PAGE)
+        compressed = _compressed_doc(ep)
         assert "adjusted" in compressed
         assert "sort" in compressed
-        assert "limit" in compressed
 
-    def test_strips_response_attributes(self):
-        compressed = compress_doc(SAMPLE_DOC_PAGE)
-        # Response attribute fields should not be present
-        assert "Array of result objects" not in compressed
+    def test_excludes_response_attributes(self):
+        ep = ParsedEndpoint(
+            title="Test",
+            path="/v2/aggs",
+            method="GET",
+            market="Stocks",
+            description="Test.",
+            query_params=[],
+            response_attributes=[
+                ResponseAttribute(
+                    name="ticker", type="string", description="The symbol."
+                ),
+            ],
+            sample_response='{"ticker": "AAPL"}',
+        )
+        compressed = _compressed_doc(ep)
+        assert "ticker" not in compressed
+        assert "AAPL" not in compressed
 
-    def test_strips_sample_response(self):
-        compressed = compress_doc(SAMPLE_DOC_PAGE)
-        assert "Sample Response" not in compressed
-        assert '"ticker": "AAPL"' not in compressed
 
-    def test_no_params_doc(self):
-        compressed = compress_doc(SAMPLE_DOC_NO_PARAMS)
-        assert "GET /v1/marketstatus/upcoming" in compressed
+class TestPathPrefix:
+    def test_path_with_params(self):
+        assert (
+            _path_prefix("/v2/aggs/ticker/{stocksTicker}/range/{multiplier}")
+            == "/v2/aggs/ticker/"
+        )
+
+    def test_crypto_path(self):
+        assert _path_prefix("/v1/last/crypto/{from}/{to}") == "/v1/last/crypto/"
+
+    def test_no_params(self):
+        assert _path_prefix("/v3/reference/tickers") == "/v3/reference/tickers"
 
 
 class TestStem:
@@ -231,10 +428,10 @@ class TestTokenize:
 
 
 class TestBuildCorpusText:
-    def test_repeats_name_and_category(self):
+    def test_repeats_name_and_market(self):
         ep = Endpoint(
             name="SMA",
-            category="Stocks",
+            market="Stocks",
             url="https://massive.com/docs/rest/stocks/sma",
             description="Get SMA for a stock ticker.",
             endpoint_pattern="GET /v1/indicators/sma/{stocksTicker}",
@@ -248,7 +445,7 @@ class TestBuildCorpusText:
     def test_extracts_camel_case_params(self):
         ep = Endpoint(
             name="Aggregates",
-            category="Stocks",
+            market="Stocks",
             url="https://massive.com/docs/rest/stocks/aggs",
             description="Get aggs.",
             endpoint_pattern="GET /v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}",
@@ -262,7 +459,7 @@ class TestBuildCorpusText:
     def test_extracts_path_segments(self):
         ep = Endpoint(
             name="Aggregates",
-            category="Stocks",
+            market="Stocks",
             url="https://massive.com/docs/rest/stocks/aggs",
             description="Get aggs.",
             endpoint_pattern="GET /v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}",
@@ -274,10 +471,10 @@ class TestBuildCorpusText:
         assert "ticker" in text
         assert "range" in text
 
-    def test_extracts_doc_url_category(self):
+    def test_extracts_doc_url_market(self):
         ep = Endpoint(
             name="SMA",
-            category="Stocks",
+            market="Stocks",
             url="https://massive.com/docs/rest/stocks/sma",
             description="Get SMA.",
             endpoint_pattern="GET /v1/indicators/sma/{stocksTicker}",
@@ -290,24 +487,24 @@ class TestBuildCorpusText:
         assert "stocks" in parts
 
 
-class TestDetectCategory:
+class TestDetectMarket:
     def test_detects_stocks(self):
-        assert _detect_category("stock SMA") == "Stocks"
+        assert _detect_market("stock SMA") == "Stocks"
 
     def test_detects_crypto(self):
-        assert _detect_category("crypto snapshot") == "Crypto"
+        assert _detect_market("crypto snapshot") == "Crypto"
 
     def test_detects_forex(self):
-        assert _detect_category("forex rates") == "Forex"
+        assert _detect_market("forex rates") == "Forex"
 
     def test_detects_options(self):
-        assert _detect_category("options chain") == "Options"
+        assert _detect_market("options chain") == "Options"
 
-    def test_no_category(self):
-        assert _detect_category("SMA") is None
+    def test_no_market(self):
+        assert _detect_market("SMA") is None
 
-    def test_no_category_generic(self):
-        assert _detect_category("aggregate bars") is None
+    def test_no_market_generic(self):
+        assert _detect_market("aggregate bars") is None
 
 
 class TestEndpointIndex:
@@ -315,7 +512,7 @@ class TestEndpointIndex:
         return [
             Endpoint(
                 name="Aggregates (Bars)",
-                category="Market Data",
+                market="Market Data",
                 url="https://massive.com/docs/rest/stocks/aggs",
                 description="Get aggregate bars for a stock.",
                 endpoint_pattern="GET /v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}",
@@ -324,7 +521,7 @@ class TestEndpointIndex:
             ),
             Endpoint(
                 name="Tickers",
-                category="Reference Data",
+                market="Reference Data",
                 url="https://massive.com/docs/rest/reference/tickers",
                 description="Query all ticker symbols.",
                 endpoint_pattern="GET /v3/reference/tickers",
@@ -333,7 +530,7 @@ class TestEndpointIndex:
             ),
             Endpoint(
                 name="Last Trade",
-                category="Market Data",
+                market="Market Data",
                 url="https://massive.com/docs/rest/stocks/last-trade",
                 description="Get the most recent trade for a ticker.",
                 endpoint_pattern="GET /v2/last/trade/{stocksTicker}",
@@ -424,7 +621,7 @@ class TestCrossAssetClassRanking:
         return [
             Endpoint(
                 name="SMA",
-                category="Stocks",
+                market="Stocks",
                 url="https://massive.com/docs/rest/stocks/sma",
                 description="Get SMA for a stock ticker.",
                 endpoint_pattern="GET /v1/indicators/sma/{stocksTicker}",
@@ -433,7 +630,7 @@ class TestCrossAssetClassRanking:
             ),
             Endpoint(
                 name="SMA",
-                category="Crypto",
+                market="Crypto",
                 url="https://massive.com/docs/rest/crypto/sma",
                 description="Get SMA for a crypto ticker.",
                 endpoint_pattern="GET /v1/indicators/sma/{cryptoTicker}",
@@ -442,7 +639,7 @@ class TestCrossAssetClassRanking:
             ),
             Endpoint(
                 name="SMA",
-                category="Forex",
+                market="Forex",
                 url="https://massive.com/docs/rest/forex/sma",
                 description="Get SMA for a forex ticker.",
                 endpoint_pattern="GET /v1/indicators/sma/{forexTicker}",
@@ -451,7 +648,7 @@ class TestCrossAssetClassRanking:
             ),
             Endpoint(
                 name="Unified Snapshot",
-                category="Stocks",
+                market="Stocks",
                 url="https://massive.com/docs/rest/stocks/snapshot",
                 description="Get unified snapshot for a stock ticker.",
                 endpoint_pattern="GET /v3/snapshot/{stocksTicker}",
@@ -460,7 +657,7 @@ class TestCrossAssetClassRanking:
             ),
             Endpoint(
                 name="Unified Snapshot",
-                category="Crypto",
+                market="Crypto",
                 url="https://massive.com/docs/rest/crypto/snapshot",
                 description="Get unified snapshot for a crypto ticker.",
                 endpoint_pattern="GET /v3/snapshot/{cryptoTicker}",
@@ -474,7 +671,7 @@ class TestCrossAssetClassRanking:
         idx = EndpointIndex(self._make_cross_asset_endpoints())
         results = idx.search("stock SMA")
         assert len(results) > 0
-        assert results[0].category == "Stocks"
+        assert results[0].market == "Stocks"
         assert results[0].name == "SMA"
 
     def test_crypto_snapshot_ranks_first(self):
@@ -484,14 +681,14 @@ class TestCrossAssetClassRanking:
         # Find the first snapshot result
         snapshot_results = [ep for ep in results if "Snapshot" in ep.name]
         assert len(snapshot_results) > 0
-        assert snapshot_results[0].category == "Crypto"
+        assert snapshot_results[0].market == "Crypto"
 
-    def test_generic_sma_returns_multiple_categories(self):
-        """Generic 'SMA' (no asset class) should return results from multiple categories."""
+    def test_generic_sma_returns_multiple_markets(self):
+        """Generic 'SMA' (no asset class) should return results from multiple markets."""
         idx = EndpointIndex(self._make_cross_asset_endpoints())
         results = idx.search("SMA")
-        categories = {ep.category for ep in results if ep.name == "SMA"}
-        assert len(categories) >= 2
+        markets = {ep.market for ep in results if ep.name == "SMA"}
+        assert len(markets) >= 2
 
 
 class TestFinanceAliases:
@@ -567,28 +764,40 @@ class TestDeprecatedFilter:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        llms_txt = """\
-# API
-
+        deprecated_txt = """\
 ## Stocks
 
-- [Aggregates (Bars)](https://massive.com/docs/aggs): Get aggs.
-- [Aggregates (Bars) (Deprecated)](https://massive.com/docs/aggs-old): Old aggs.
+### Aggregates (Bars)
+
+**Endpoint:** `GET /v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}`
+
+**Description:**
+
+Get aggregate bars.
+
+## Query Parameters
+
+- adjusted (boolean, optional): Whether results are adjusted for splits.
+---
+## Stocks
+
+### Aggregates (Bars) (Deprecated)
+
+**Endpoint:** `GET /v1/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}`
+
+**Description:**
+
+Old aggregate bars.
+
+## Query Parameters
+
+- adjusted (boolean, optional): Whether results are adjusted for splits.
 """
-        llms_response = MagicMock()
-        llms_response.text = llms_txt
-        llms_response.raise_for_status = MagicMock()
+        response = MagicMock()
+        response.text = deprecated_txt
+        response.raise_for_status = MagicMock()
 
-        doc_response = MagicMock()
-        doc_response.text = SAMPLE_DOC_PAGE
-        doc_response.raise_for_status = MagicMock()
-
-        async def get_side_effect(url, **kwargs):
-            if url == "https://massive.com/docs/rest/llms.txt":
-                return llms_response
-            return doc_response
-
-        mock_client.get = AsyncMock(side_effect=get_side_effect)
+        mock_client.get = AsyncMock(return_value=response)
 
         idx = await build_index()
         # Only the non-deprecated endpoint should be indexed
@@ -606,29 +815,17 @@ class TestBuildIndex:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        # Mock llms.txt response
-        llms_response = MagicMock()
-        llms_response.text = SAMPLE_LLMS_TXT
-        llms_response.raise_for_status = MagicMock()
-
-        # Mock doc page responses
-        doc_response = MagicMock()
-        doc_response.text = SAMPLE_DOC_PAGE
-        doc_response.raise_for_status = MagicMock()
-
-        async def get_side_effect(url, **kwargs):
-            if url == "https://massive.com/docs/rest/llms.txt":
-                return llms_response
-            return doc_response
-
-        mock_client.get = AsyncMock(side_effect=get_side_effect)
+        response = MagicMock()
+        response.text = llms_partial_txt()
+        response.raise_for_status = MagicMock()
+        mock_client.get = AsyncMock(return_value=response)
 
         idx = await build_index()
         assert isinstance(idx, EndpointIndex)
 
     @pytest.mark.asyncio
     @patch("mcp_massive.index.httpx.AsyncClient")
-    async def test_build_index_llms_txt_failure(self, mock_client_class):
+    async def test_build_index_fetch_failure(self, mock_client_class):
         mock_client = AsyncMock()
         mock_client_class.return_value = mock_client
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -642,43 +839,6 @@ class TestBuildIndex:
 
     @pytest.mark.asyncio
     @patch("mcp_massive.index.httpx.AsyncClient")
-    async def test_build_index_partial_doc_failures(self, mock_client_class):
-        """Index should still work when some doc pages fail to fetch."""
-        mock_client = AsyncMock()
-        mock_client_class.return_value = mock_client
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        llms_response = MagicMock()
-        llms_response.text = SAMPLE_LLMS_TXT
-        llms_response.raise_for_status = MagicMock()
-
-        doc_response = MagicMock()
-        doc_response.text = SAMPLE_DOC_PAGE
-        doc_response.raise_for_status = MagicMock()
-
-        call_count = 0
-
-        async def get_side_effect(url, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if url == "https://massive.com/docs/rest/llms.txt":
-                return llms_response
-            # Fail every other doc page
-            if call_count % 2 == 0:
-                raise Exception("Simulated doc fetch failure")
-            return doc_response
-
-        mock_client.get = AsyncMock(side_effect=get_side_effect)
-
-        idx = await build_index()
-        assert isinstance(idx, EndpointIndex)
-        # Should have at least one endpoint (the one that didn't fail)
-        results = idx.search("aggregates")
-        assert len(results) >= 0  # May or may not match depending on which page failed
-
-    @pytest.mark.asyncio
-    @patch("mcp_massive.index.httpx.AsyncClient")
     async def test_build_index_explicit_url(self, mock_client_class):
         """build_index(llms_txt_url=...) should use the provided URL."""
         mock_client = AsyncMock()
@@ -686,28 +846,75 @@ class TestBuildIndex:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        llms_response = MagicMock()
-        llms_response.text = SAMPLE_LLMS_TXT
-        llms_response.raise_for_status = MagicMock()
+        response = MagicMock()
+        response.text = llms_partial_txt()
+        response.raise_for_status = MagicMock()
 
-        doc_response = MagicMock()
-        doc_response.text = SAMPLE_DOC_PAGE
-        doc_response.raise_for_status = MagicMock()
-
-        custom_url = "https://custom-server.example.com/llms.txt"
-
-        async def get_side_effect(url, **kwargs):
-            if url == custom_url:
-                return llms_response
-            if "massive.com/docs/rest/llms.txt" in url:
-                # Default URL should NOT be called
-                raise AssertionError(f"Default URL was called: {url}")
-            return doc_response
-
-        mock_client.get = AsyncMock(side_effect=get_side_effect)
+        custom_url = "https://custom-server.example.com/llms-full.txt"
+        mock_client.get = AsyncMock(return_value=response)
 
         idx = await build_index(llms_txt_url=custom_url)
         assert isinstance(idx, EndpointIndex)
-        # Verify the custom URL was the first get call
+        # Verify the custom URL was the only get call
         first_call_url = mock_client.get.call_args_list[0].args[0]
         assert first_call_url == custom_url
+        # Should be exactly one fetch (no individual doc page fetches)
+        assert mock_client.get.call_count == 1
+
+
+class TestLlmsFullTxtE2E:
+    """End-to-end test that fetches the real llms-full.txt from massive.com.
+
+    This catches breaking changes in the upstream document format.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.e2e
+    async def test_fetch_and_parse_real_llms_full_txt(self):
+        """Fetch the real llms-full.txt and verify it parses into valid endpoints."""
+        import httpx
+        import ssl
+        import certifi
+
+        url = "https://massive.com/docs/rest/llms-full.txt"
+        ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+        async with httpx.AsyncClient(timeout=30.0, verify=ssl_ctx) as client:
+            resp = await client.get(url, follow_redirects=True)
+            resp.raise_for_status()
+            text = resp.text
+
+        entries = parse_llms_full_txt(text)
+
+        # Should have a substantial number of endpoints
+        assert len(entries) > 40, f"Expected 40+ endpoints, got {len(entries)}"
+
+        # Every entry must have required fields
+        for entry in entries:
+            assert entry.title, f"Entry missing title: {entry}"
+            assert entry.market, f"Entry missing market: {entry}"
+            assert entry.method, f"Entry missing method: {entry.title}"
+            assert entry.path, f"Entry missing path: {entry.title}"
+
+        # Most entries should have an endpoint path
+        paths_found = sum(1 for e in entries if e.path)
+        assert paths_found > 40, f"Expected 40+ entries with paths, got {paths_found}"
+
+    @pytest.mark.asyncio
+    @pytest.mark.e2e
+    async def test_build_index_from_real_llms_full_txt(self):
+        """Build a full index from the real llms-full.txt and verify search works."""
+        idx = await build_index(
+            llms_txt_url="https://massive.com/docs/rest/llms-full.txt"
+        )
+
+        # Should have indexed many endpoints
+        assert len(idx._endpoints) > 40
+
+        # Basic search should return results
+        results = idx.search("stock aggregate bars")
+        assert len(results) > 0
+        assert any("aggregate" in ep.name.lower() for ep in results)
+
+        # Market detection should work
+        results = idx.search("crypto snapshot")
+        assert len(results) > 0

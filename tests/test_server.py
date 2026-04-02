@@ -25,7 +25,7 @@ def _make_test_index():
     endpoints = [
         Endpoint(
             name="Aggregates Bars",
-            category="Market Data",
+            market="Market Data",
             url="https://massive.com/docs/aggs",
             description="Get aggregate bars for a stock",
             endpoint_pattern="GET /v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}",
@@ -34,7 +34,7 @@ def _make_test_index():
         ),
         Endpoint(
             name="Tickers",
-            category="Reference Data",
+            market="Reference Data",
             url="https://massive.com/docs/tickers",
             description="Query all ticker symbols",
             endpoint_pattern="GET /v3/reference/tickers",
@@ -43,7 +43,7 @@ def _make_test_index():
         ),
         Endpoint(
             name="Last Trade",
-            category="Market Data",
+            market="Market Data",
             url="https://massive.com/docs/last-trade",
             description="Get the most recent trade for a ticker",
             endpoint_pattern="GET /v2/last/trade/{stocksTicker}",
@@ -708,11 +708,11 @@ class TestResponseSizeLimit:
         assert "Error" not in result or "too large" not in result
 
 
-class TestErrorCategories:
-    """Verify error messages include category prefixes for LLM self-correction."""
+class TestErrorMarket:
+    """Verify error messages include market prefixes for LLM self-correction."""
 
     @pytest.mark.asyncio
-    async def test_auth_error_category(self):
+    async def test_auth_error_market(self):
         with patch("mcp_massive.server._get_api_key", return_value=""):
             result = await call_api(
                 "GET",
@@ -721,13 +721,13 @@ class TestErrorCategories:
         assert "[AUTH]" in result
 
     @pytest.mark.asyncio
-    async def test_not_found_error_category(self):
+    async def test_not_found_error_market(self):
         result = await call_api("GET", "/v1/unknown/endpoint")
         assert "[NOT_FOUND]" in result
         assert "search_endpoints" in result
 
     @pytest.mark.asyncio
-    async def test_invalid_request_error_category(self):
+    async def test_invalid_request_error_market(self):
         result = await call_api(
             "POST",  # pyright: ignore[reportArgumentType]
             "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
@@ -735,8 +735,8 @@ class TestErrorCategories:
         assert "[INVALID_REQUEST]" in result
 
     @pytest.mark.asyncio
-    async def test_http_error_categories(self):
-        """HTTP status codes map to correct error categories."""
+    async def test_http_error_markets(self):
+        """HTTP status codes map to correct error markets."""
         cases = [
             (401, "AUTH"),
             (403, "AUTH"),
@@ -744,7 +744,7 @@ class TestErrorCategories:
             (500, "SERVER"),
             (404, "HTTP"),
         ]
-        for status_code, expected_category in cases:
+        for status_code, expected_market in cases:
             mock_response = MagicMock()
             mock_response.status_code = status_code
             mock_response.text = f"Error {status_code}"
@@ -770,12 +770,12 @@ class TestErrorCategories:
                     "GET",
                     "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
                 )
-            assert f"[{expected_category}]" in result, (
-                f"Expected [{expected_category}] for HTTP {status_code}, got: {result}"
+            assert f"[{expected_market}]" in result, (
+                f"Expected [{expected_market}] for HTTP {status_code}, got: {result}"
             )
 
     @pytest.mark.asyncio
-    async def test_too_large_error_category(self):
+    async def test_too_large_error_market(self):
         mock_response = MagicMock()
         mock_response.text = "x" * (MAX_RESPONSE_SIZE_BYTES + 1)
         mock_response.raise_for_status = MagicMock()
