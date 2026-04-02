@@ -46,7 +46,8 @@ mass_mcp = FastMCP(
         "market data, financial data, tickers, options, trades, quotes, aggregates, "
         "crypto prices, forex rates, or any securities/market information. "
         "Do NOT use web search for financial data — use these tools instead. "
-        "Start with search_endpoints to discover the right API endpoint, then "
+        "Start with search_endpoints to discover the right API endpoint (use "
+        'detail="more" to see parameter docs), then '
         "call_api to fetch the data. Use store_as + query_data for multi-step analysis. "
         "Covers: equities, options, ETFs, indices, FX, crypto — real-time and historical."
     ),
@@ -206,8 +207,29 @@ async def search_endpoints(
             description='Search scope: "endpoints" for API only, "functions" for local functions only, or "all"/omit for both'
         ),
     ] = None,
+    max_results: Annotated[
+        Optional[int],
+        Field(
+            description="Maximum number of results to return (default 5 for mixed, 7 for endpoints-only)",
+            ge=1,
+            le=25,
+        ),
+    ] = None,
+    detail: Annotated[
+        Optional[Literal["default", "more", "verbose"]],
+        Field(
+            description=(
+                'Level of detail per result. '
+                '"default": title, path, and description. '
+                '"more": adds query parameter documentation. '
+                '"verbose": adds response attributes and sample response.'
+            ),
+        ),
+    ] = None,
 ) -> str:
-    """Search for financial market data API endpoints by natural language query. Use this FIRST whenever you need stock prices, options data, trades, quotes, aggregates, crypto, forex, or any financial/market data. Returns matching endpoint names, URL patterns, and descriptions. Try keywords like: aggregates, tickers, trades, quotes, snapshots, financials, options, IPO, inflation, market status. Also searches local finance functions (Greeks, returns, technicals) that can be applied to results via the apply parameter. Set scope to "endpoints" for API endpoints only, "functions" for local functions only, or omit/set "all" for both."""
+    """Search for financial market data API endpoints by natural language query. Use this FIRST whenever you need stock prices, options data, trades, quotes, aggregates, crypto, forex, or any financial/market data. Returns matching endpoint titles, path patterns, and descriptions. Try keywords like: aggregates, tickers, trades, quotes, snapshots, financials, options, IPO, inflation, market status. Also searches local finance functions (Greeks, returns, technicals) that can be applied to results via the apply parameter. Set scope to "endpoints" for API endpoints only, "functions" for local functions only, or omit/set "all" for both. Set detail to "more" to include query parameter docs, or "verbose" for full documentation including response attributes and sample responses."""
+    effective_detail = detail or "default"
+
     lines = []
     counter = 1
 
@@ -216,21 +238,17 @@ async def search_endpoints(
 
     if show_endpoints:
         idx = await _get_index()
-        top_k = 7 if scope == "endpoints" else 5
+        default_k = 7 if scope == "endpoints" else 5
+        top_k = max_results if max_results is not None else default_k
         results = idx.search(query, top_k=top_k)
         for ep in results:
-            lines.append(
-                f"{counter}. {ep.name} [{ep.market}]\n"
-                f"   {ep.endpoint_pattern}\n"
-                f"   {ep.description}\n"
-                f"   Docs: {ep.url}"
-            )
+            lines.append(ep.format(effective_detail, counter))
             counter += 1
 
     if show_functions:
         fidx = _get_func_index()
-        top_k = 5 if scope == "functions" else 3
-        func_results = fidx.search(query, top_k=top_k)
+        func_k = max_results if max_results is not None else (5 if scope == "functions" else 3)
+        func_results = fidx.search(query, top_k=func_k)
         for func in func_results:
             lines.append(
                 f"{counter}. {func.name} [{func.category}] (function)\n"
@@ -245,24 +263,7 @@ async def search_endpoints(
 
 
 @mass_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
-async def get_endpoint_docs(
-    url: Annotated[
-        str, Field(description="The docs URL from search_endpoints results")
-    ],
-) -> str:
-    """Get parameter documentation for a financial data API endpoint. Pass the docs URL from search_endpoints results. Returns the endpoint pattern and available query parameters."""
-    idx = await _get_index()
-    doc = idx.get_doc(url)
-    if doc is None:
-        return f"Error: URL not found in index: {url}"
-    return doc
-
-
-@mass_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def call_api(
-    method: Annotated[
-        Literal["GET"], Field(description="HTTP method (only GET is supported)")
-    ],
     path: Annotated[
         str,
         Field(
@@ -299,10 +300,6 @@ async def call_api(
 ) -> str:
     """Fetch financial market data (stock prices, options, trades, quotes, aggregates, crypto, forex). Only GET requests are supported. The path should match an endpoint pattern from search_endpoints (e.g., /v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31). Query parameters are passed as a dictionary via params. If the response is paginated, a "Next page available" hint with the exact path and params for the next call_api request is appended to the output. Optionally set store_as to a table name (e.g., "prices") to save the results as an in-memory table for later SQL querying with query_data, instead of returning CSV. Optionally set apply to a list of function steps to post-process results — each step is {"function": "name", "inputs": {"param": value}, "output": "col_name"}. String input values refer to column names; numeric values are literals. Use search_endpoints with scope="functions" to discover available functions."""
     idx = await _get_index()
-
-    # Security: only GET allowed
-    if method.upper() != "GET":
-        return f"Error [INVALID_REQUEST]: Only GET method is allowed, got {method}"
 
     # Security: block path traversal (fully decode to catch double-encoding)
     prev = path
@@ -444,7 +441,7 @@ async def query_data(
         ),
     ] = None,
 ) -> str:
-    """Analyze financial market data using SQL. Queries DataFrames stored via call_api's store_as parameter. Uses SQLite SQL engine — supports standard SQL including scalar subqueries, CTEs, ILIKE, window functions, and complex expressions. Special commands: 'SHOW TABLES' lists stored tables, 'DESCRIBE <table>' shows table schema, 'DROP TABLE <table>' removes a table. Tables auto-expire after 1 hour. Optionally set apply to a list of function steps to post-process query results — each step is {"function": "name", "inputs": {"param": value}, "output": "col_name"}. Use search_endpoints with scope="functions" to discover available functions."""
+    """Queries an in-memory SQLite DB populated via call_api's store_as parameter. Special commands: 'SHOW TABLES' lists stored tables, 'DESCRIBE <table>' shows table schema, 'DROP TABLE <table>' removes a table. Tables auto-expire after 1 hour. Optionally set `apply` to a list of function steps to post-process query results — each step is {"function": "name", "inputs": {"param": value}, "output": "col_name"}. Use search_endpoints with scope="functions" to discover available functions."""
     s = _get_store()
     normalized = sql.strip()
     upper = normalized.upper()

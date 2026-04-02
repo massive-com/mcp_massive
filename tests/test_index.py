@@ -5,7 +5,6 @@ import pytest
 from mcp_massive.index import (
     Endpoint,
     EndpointIndex,
-    ParsedEndpoint,
     QueryParam,
     ResponseAttribute,
     parse_llms_txt,
@@ -19,8 +18,6 @@ from mcp_massive.index import (
     _tokenize,
     _build_corpus_text,
     _detect_market,
-    _slugify,
-    _compressed_doc,
     _path_prefix,
 )
 from tests.integration.mock_llms_txt import (
@@ -251,93 +248,6 @@ class TestParseLlmsFullTxt:
         assert "stocksTicker" not in first_param_names
 
 
-class TestSlugify:
-    def test_basic(self):
-        assert _slugify("Market Data") == "market-data"
-
-    def test_special_chars(self):
-        assert _slugify("Aggregates (Bars)") == "aggregates-bars"
-
-    def test_multiple_spaces(self):
-        assert _slugify("Reference   Data") == "reference-data"
-
-    def test_leading_trailing(self):
-        assert _slugify("  hello world  ") == "hello-world"
-
-    def test_empty(self):
-        assert _slugify("") == ""
-
-
-class TestCompressedDoc:
-    def test_includes_endpoint_pattern(self):
-        ep = ParsedEndpoint(
-            title="Test",
-            path="/v2/aggs/ticker/{stocksTicker}",
-            method="GET",
-            market="Stocks",
-            description="Test endpoint.",
-            query_params=[
-                QueryParam(
-                    name="adjusted",
-                    type="boolean",
-                    required=False,
-                    description="Whether adjusted.",
-                ),
-            ],
-            response_attributes=[],
-            sample_response="",
-        )
-        compressed = _compressed_doc(ep)
-        assert "GET /v2/aggs/ticker/{stocksTicker}" in compressed
-
-    def test_includes_query_params(self):
-        ep = ParsedEndpoint(
-            title="Test",
-            path="/v2/aggs",
-            method="GET",
-            market="Stocks",
-            description="Test.",
-            query_params=[
-                QueryParam(
-                    name="adjusted",
-                    type="boolean",
-                    required=False,
-                    description="Whether adjusted.",
-                ),
-                QueryParam(
-                    name="sort",
-                    type="string",
-                    required=False,
-                    description="Sort order.",
-                ),
-            ],
-            response_attributes=[],
-            sample_response="",
-        )
-        compressed = _compressed_doc(ep)
-        assert "adjusted" in compressed
-        assert "sort" in compressed
-
-    def test_excludes_response_attributes(self):
-        ep = ParsedEndpoint(
-            title="Test",
-            path="/v2/aggs",
-            method="GET",
-            market="Stocks",
-            description="Test.",
-            query_params=[],
-            response_attributes=[
-                ResponseAttribute(
-                    name="ticker", type="string", description="The symbol."
-                ),
-            ],
-            sample_response='{"ticker": "AAPL"}',
-        )
-        compressed = _compressed_doc(ep)
-        assert "ticker" not in compressed
-        assert "AAPL" not in compressed
-
-
 class TestPathPrefix:
     def test_path_with_params(self):
         assert (
@@ -428,12 +338,12 @@ class TestTokenize:
 class TestBuildCorpusText:
     def test_repeats_name_and_market(self):
         ep = Endpoint(
-            name="SMA",
+            title="SMA",
+            method="GET",
+            path="/v1/indicators/sma/{stocksTicker}",
             market="Stocks",
-            url="https://massive.com/docs/rest/stocks/sma",
+
             description="Get SMA for a stock ticker.",
-            endpoint_pattern="GET /v1/indicators/sma/{stocksTicker}",
-            compressed_doc="...",
             path_prefix="/v1/indicators/sma/",
         )
         text = _build_corpus_text(ep)
@@ -442,12 +352,12 @@ class TestBuildCorpusText:
 
     def test_extracts_camel_case_params(self):
         ep = Endpoint(
-            name="Aggregates",
+            title="Aggregates",
+            method="GET",
+            path="/v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}",
             market="Stocks",
-            url="https://massive.com/docs/rest/stocks/aggs",
+
             description="Get aggs.",
-            endpoint_pattern="GET /v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}",
-            compressed_doc="...",
             path_prefix="/v2/aggs/ticker/",
         )
         text = _build_corpus_text(ep)
@@ -456,33 +366,18 @@ class TestBuildCorpusText:
 
     def test_extracts_path_segments(self):
         ep = Endpoint(
-            name="Aggregates",
+            title="Aggregates",
+            method="GET",
+            path="/v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}",
             market="Stocks",
-            url="https://massive.com/docs/rest/stocks/aggs",
+
             description="Get aggs.",
-            endpoint_pattern="GET /v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}",
-            compressed_doc="...",
             path_prefix="/v2/aggs/ticker/",
         )
         text = _build_corpus_text(ep)
         assert "aggs" in text
         assert "ticker" in text
         assert "range" in text
-
-    def test_extracts_doc_url_market(self):
-        ep = Endpoint(
-            name="SMA",
-            market="Stocks",
-            url="https://massive.com/docs/rest/stocks/sma",
-            description="Get SMA.",
-            endpoint_pattern="GET /v1/indicators/sma/{stocksTicker}",
-            compressed_doc="...",
-            path_prefix="/v1/indicators/sma/",
-        )
-        text = _build_corpus_text(ep)
-        # "stocks" from the doc URL
-        parts = text.split()
-        assert "stocks" in parts
 
 
 class TestDetectMarket:
@@ -509,30 +404,30 @@ class TestEndpointIndex:
     def _make_endpoints(self):
         return [
             Endpoint(
-                name="Aggregates (Bars)",
+                title="Aggregates (Bars)",
+                method="GET",
+                path="/v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}",
                 market="Market Data",
-                url="https://massive.com/docs/rest/stocks/aggs",
+    
                 description="Get aggregate bars for a stock.",
-                endpoint_pattern="GET /v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}",
-                compressed_doc="GET /v2/aggs/...",
                 path_prefix="/v2/aggs/ticker/",
             ),
             Endpoint(
-                name="Tickers",
+                title="Tickers",
+                method="GET",
+                path="/v3/reference/tickers",
                 market="Reference Data",
-                url="https://massive.com/docs/rest/reference/tickers",
+
                 description="Query all ticker symbols.",
-                endpoint_pattern="GET /v3/reference/tickers",
-                compressed_doc="GET /v3/reference/tickers",
                 path_prefix="/v3/reference/tickers",
             ),
             Endpoint(
-                name="Last Trade",
+                title="Last Trade",
+                method="GET",
+                path="/v2/last/trade/{stocksTicker}",
                 market="Market Data",
-                url="https://massive.com/docs/rest/stocks/last-trade",
+
                 description="Get the most recent trade for a ticker.",
-                endpoint_pattern="GET /v2/last/trade/{stocksTicker}",
-                compressed_doc="GET /v2/last/trade/...",
                 path_prefix="/v2/last/trade/",
             ),
         ]
@@ -541,7 +436,7 @@ class TestEndpointIndex:
         idx = EndpointIndex(self._make_endpoints())
         results = idx.search("aggregate bars stock")
         assert len(results) > 0
-        assert results[0].name == "Aggregates (Bars)"
+        assert results[0].title == "Aggregates (Bars)"
 
     def test_search_no_results(self):
         idx = EndpointIndex(self._make_endpoints())
@@ -566,50 +461,41 @@ class TestEndpointIndex:
         assert not idx.is_path_allowed("/v1/unknown/endpoint")
         assert not idx.is_path_allowed("/admin/secret")
 
-    def test_get_doc_found(self):
-        idx = EndpointIndex(self._make_endpoints())
-        doc = idx.get_doc("https://massive.com/docs/rest/stocks/aggs")
-        assert doc == "GET /v2/aggs/..."
-
-    def test_get_doc_not_found(self):
-        idx = EndpointIndex(self._make_endpoints())
-        assert idx.get_doc("https://massive.com/docs/nonexistent") is None
-
     def test_search_alias_agg(self):
         """'agg' should find Aggregates via alias expansion."""
         idx = EndpointIndex(self._make_endpoints())
         results = idx.search("agg")
-        assert any("Aggregates" in ep.name for ep in results)
+        assert any("Aggregates" in ep.title for ep in results)
 
     def test_search_alias_candle(self):
         """'candle' should find Aggregates via alias expansion."""
         idx = EndpointIndex(self._make_endpoints())
         results = idx.search("candle")
-        assert any("Aggregates" in ep.name for ep in results)
+        assert any("Aggregates" in ep.title for ep in results)
 
     def test_search_alias_ohlc(self):
         """'ohlc' should find Aggregates via alias expansion."""
         idx = EndpointIndex(self._make_endpoints())
         results = idx.search("ohlc data")
-        assert any("Aggregates" in ep.name for ep in results)
+        assert any("Aggregates" in ep.title for ep in results)
 
     def test_search_stemmed_plural(self):
         """'tickers' (plural) should still match 'Tickers' endpoint."""
         idx = EndpointIndex(self._make_endpoints())
         results = idx.search("tickers")
-        assert any("Tickers" in ep.name for ep in results)
+        assert any("Tickers" in ep.title for ep in results)
 
     def test_search_alias_symbol(self):
         """'symbol' should find Tickers via alias expansion."""
         idx = EndpointIndex(self._make_endpoints())
         results = idx.search("symbol lookup")
-        assert any("Tickers" in ep.name for ep in results)
+        assert any("Tickers" in ep.title for ep in results)
 
     def test_search_alias_transaction(self):
         """'transaction' should find Last Trade via alias expansion."""
         idx = EndpointIndex(self._make_endpoints())
         results = idx.search("last transaction")
-        assert any("Trade" in ep.name for ep in results)
+        assert any("Trade" in ep.title for ep in results)
 
 
 class TestCrossAssetClassRanking:
@@ -618,48 +504,48 @@ class TestCrossAssetClassRanking:
     def _make_cross_asset_endpoints(self):
         return [
             Endpoint(
-                name="SMA",
+                title="SMA",
+                method="GET",
+                path="/v1/indicators/sma/{stocksTicker}",
                 market="Stocks",
-                url="https://massive.com/docs/rest/stocks/sma",
+    
                 description="Get SMA for a stock ticker.",
-                endpoint_pattern="GET /v1/indicators/sma/{stocksTicker}",
-                compressed_doc="...",
                 path_prefix="/v1/indicators/sma/",
             ),
             Endpoint(
-                name="SMA",
+                title="SMA",
+                method="GET",
+                path="/v1/indicators/sma/{cryptoTicker}",
                 market="Crypto",
-                url="https://massive.com/docs/rest/crypto/sma",
+
                 description="Get SMA for a crypto ticker.",
-                endpoint_pattern="GET /v1/indicators/sma/{cryptoTicker}",
-                compressed_doc="...",
                 path_prefix="/v1/indicators/sma/",
             ),
             Endpoint(
-                name="SMA",
+                title="SMA",
+                method="GET",
+                path="/v1/indicators/sma/{forexTicker}",
                 market="Forex",
-                url="https://massive.com/docs/rest/forex/sma",
+
                 description="Get SMA for a forex ticker.",
-                endpoint_pattern="GET /v1/indicators/sma/{forexTicker}",
-                compressed_doc="...",
                 path_prefix="/v1/indicators/sma/",
             ),
             Endpoint(
-                name="Unified Snapshot",
+                title="Unified Snapshot",
+                method="GET",
+                path="/v3/snapshot/{stocksTicker}",
                 market="Stocks",
-                url="https://massive.com/docs/rest/stocks/snapshot",
+
                 description="Get unified snapshot for a stock ticker.",
-                endpoint_pattern="GET /v3/snapshot/{stocksTicker}",
-                compressed_doc="...",
                 path_prefix="/v3/snapshot/",
             ),
             Endpoint(
-                name="Unified Snapshot",
+                title="Unified Snapshot",
+                method="GET",
+                path="/v3/snapshot/{cryptoTicker}",
                 market="Crypto",
-                url="https://massive.com/docs/rest/crypto/snapshot",
+
                 description="Get unified snapshot for a crypto ticker.",
-                endpoint_pattern="GET /v3/snapshot/{cryptoTicker}",
-                compressed_doc="...",
                 path_prefix="/v3/snapshot/",
             ),
         ]
@@ -670,14 +556,14 @@ class TestCrossAssetClassRanking:
         results = idx.search("stock SMA")
         assert len(results) > 0
         assert results[0].market == "Stocks"
-        assert results[0].name == "SMA"
+        assert results[0].title == "SMA"
 
     def test_crypto_snapshot_ranks_first(self):
         """'crypto snapshot' should rank Crypto snapshot above Stocks snapshot."""
         idx = EndpointIndex(self._make_cross_asset_endpoints())
         results = idx.search("crypto snapshot")
         # Find the first snapshot result
-        snapshot_results = [ep for ep in results if "Snapshot" in ep.name]
+        snapshot_results = [ep for ep in results if "Snapshot" in ep.title]
         assert len(snapshot_results) > 0
         assert snapshot_results[0].market == "Crypto"
 
@@ -685,7 +571,7 @@ class TestCrossAssetClassRanking:
         """Generic 'SMA' (no asset class) should return results from multiple markets."""
         idx = EndpointIndex(self._make_cross_asset_endpoints())
         results = idx.search("SMA")
-        markets = {ep.market for ep in results if ep.name == "SMA"}
+        markets = {ep.market for ep in results if ep.title == "SMA"}
         assert len(markets) >= 2
 
 
@@ -801,7 +687,7 @@ Old aggregate bars.
         # Only the non-deprecated endpoint should be indexed
         results = idx.search("aggregates")
         for ep in results:
-            assert "(Deprecated)" not in ep.name
+            assert "(Deprecated)" not in ep.title
 
 
 class TestBuildIndex:
@@ -911,7 +797,7 @@ class TestLlmsFullTxtE2E:
         # Basic search should return results
         results = idx.search("stock aggregate bars")
         assert len(results) > 0
-        assert any("aggregate" in ep.name.lower() for ep in results)
+        assert any("aggregate" in ep.title.lower() for ep in results)
 
         # Market detection should work
         results = idx.search("crypto snapshot")
