@@ -37,6 +37,28 @@ class TestTable:
         assert t.columns == []
         assert len(t) == 0
 
+    def test_from_records_preserves_casing(self):
+        t = Table.from_records([{"Name": "Alice", "AGE": 30}])
+        assert t.columns == ["Name", "AGE"]
+        assert t["Name"] == ["Alice"]
+        assert t["AGE"] == [30]
+
+    def test_from_records_deduplicates_case_insensitive_columns(self):
+        """Polygon.io returns both T (ticker) and t (timestamp)."""
+        t = Table.from_records([{"T": "AAPL", "v": 100.0, "t": 1704067200000}])
+        assert t.columns == ["T", "v", "t_2"]
+        assert t["T"] == ["AAPL"]
+        assert t["v"] == [100.0]
+        assert t["t_2"] == [1704067200000]
+
+    def test_from_records_dedup_multiple_collisions(self):
+        t = Table.from_records([{"a": 1, "A": 2, "A_2": 3}])
+        # a preserved, A collides -> A_2, A_2 collides with A_2 -> A_2_2
+        assert t.columns == ["a", "A_2", "A_2_2"]
+        assert t["a"] == [1]
+        assert t["A_2"] == [2]
+        assert t["A_2_2"] == [3]
+
     def test_len(self):
         t = Table(["x"], {"x": [1, 2, 3]})
         assert len(t) == 3
@@ -537,6 +559,29 @@ class TestDuplicateColumnGuardrails:
         tbl = Table(["a", "b", "c"], {"a": [1], "b": [2], "c": [3]})
         # Should not raise
         s._check_duplicate_columns(tbl)
+
+    def test_store_and_query_case_insensitive_columns(self):
+        """End-to-end: store records with T/t columns, query via SQL."""
+        s = DataFrameStore()
+        records = [
+            {
+                "T": "AAPL",
+                "v": 45000000.0,
+                "vw": 150.5,
+                "o": 149.0,
+                "c": 151.0,
+                "h": 152.0,
+                "l": 148.0,
+                "t": 1704067200000,
+                "n": 500000,
+            },
+        ]
+        result = s.store("prices", records)
+        assert result.row_count == 1
+
+        csv = s.query("SELECT T, v, t_2 FROM prices")
+        assert "AAPL" in csv
+        assert "1704067200000" in csv
 
 
 class TestScalarSubqueryRewrite:
