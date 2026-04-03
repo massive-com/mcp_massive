@@ -169,21 +169,42 @@ class Table:
 
         Preserves insertion order of keys across all records.
         Fills missing keys with None.
+        When two columns differ only in case (e.g. ``T`` and ``t``),
+        the later column is renamed with a ``_2`` suffix to avoid
+        SQLite case-insensitive collisions.
         """
         if not records:
             return cls([], {})
-        # Collect all keys in insertion order
+        # Collect all keys in insertion order (original casing)
         seen: set[str] = set()
-        columns: list[str] = []
+        raw_columns: list[str] = []
         for rec in records:
             for key in rec:
                 if key not in seen:
                     seen.add(key)
-                    columns.append(key)
+                    raw_columns.append(key)
+
+        # Deduplicate case-insensitive collisions for SQLite compatibility
+        ci_seen: set[str] = set()
+        columns: list[str] = []
+        col_map: dict[str, str] = {}  # original key -> final column name
+        for col in raw_columns:
+            if col.lower() in ci_seen:
+                renamed = f"{col}_2"
+                while renamed.lower() in ci_seen:
+                    renamed += "_2"
+                columns.append(renamed)
+                ci_seen.add(renamed.lower())
+                col_map[col] = renamed
+            else:
+                columns.append(col)
+                ci_seen.add(col.lower())
+                col_map[col] = col
+
         data: dict[str, list] = {col: [] for col in columns}
         for rec in records:
-            for col in columns:
-                data[col].append(rec.get(col))
+            for raw_col in raw_columns:
+                data[col_map[raw_col]].append(rec.get(raw_col))
         return cls(columns, data)
 
     def __len__(self) -> int:
