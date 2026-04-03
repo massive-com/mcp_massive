@@ -8,14 +8,14 @@ column/literal inputs.
 
 import math
 import re
+import sqlite3
 from enum import Enum
 from typing import Any, Callable
 
 import numpy as np
-import bm25s
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .index import _tokenize
+from .index import _expand_query
 from .store import Table
 
 _VALID_OPTION_TYPES = frozenset({"call", "put"})
@@ -722,33 +722,39 @@ _register(
 
 
 class FunctionIndex:
-    """BM25 search index over registered functions."""
+    """FTS5-backed BM25 search index over registered functions."""
 
     def __init__(self, registry: dict[str, FunctionDef] | None = None) -> None:
         reg = registry or FUNCTION_REGISTRY
         self._functions = list(reg.values())
-        if self._functions:
-            tokenized = [_tokenize(f.search_text) for f in self._functions]
-            self._bm25 = bm25s.BM25()
-            self._bm25.index(tokenized)
-        else:
-            self._bm25 = None
+
+        self._conn = sqlite3.connect(":memory:", check_same_thread=False)
+        self._conn.execute(
+            "CREATE VIRTUAL TABLE fn_fts USING fts5(  search_text, tokenize='porter')"
+        )
+        for i, func in enumerate(self._functions):
+            self._conn.execute(
+                "INSERT INTO fn_fts(rowid, search_text) VALUES (?, ?)",
+                (i, func.search_text),
+            )
 
     def search(self, query: str, top_k: int = 5) -> list[FunctionDef]:
-        if self._bm25 is None or not self._functions:
+        if not self._functions:
             return []
-        tokenized_query = _tokenize(query)
-        results, scores = self._bm25.retrieve(
-            [tokenized_query],
-            k=min(top_k, len(self._functions)),
-        )
-        indices: list[int] = list(results[0])
-        query_scores: list[float] = list(scores[0])
-        return [
-            self._functions[idx]
-            for idx, score in zip(indices, query_scores)
-            if score > 0
-        ]
+        fts_query = _expand_query(query)
+        if not fts_query:
+            return []
+        try:
+            cursor = self._conn.execute(
+                "SELECT rowid FROM fn_fts "
+                "WHERE fn_fts MATCH ? "
+                "ORDER BY bm25(fn_fts) "
+                "LIMIT ?",
+                (fts_query, min(top_k, len(self._functions))),
+            )
+            return [self._functions[row[0]] for row in cursor.fetchall()]
+        except sqlite3.OperationalError:
+            return []
 
 
 # ---------------------------------------------------------------------------

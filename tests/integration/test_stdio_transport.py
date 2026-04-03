@@ -57,7 +57,6 @@ class TestStdioTransport:
                 result = await session.call_tool(
                     "call_api",
                     {
-                        "method": "GET",
                         "path": "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-05",
                     },
                 )
@@ -79,7 +78,6 @@ class TestStdioTransport:
                 store_result = await session.call_tool(
                     "call_api",
                     {
-                        "method": "GET",
                         "path": "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-05",
                         "store_as": "prices",
                     },
@@ -123,7 +121,6 @@ class TestStdioTransport:
                 call = await session.call_tool(
                     "call_api",
                     {
-                        "method": "GET",
                         "path": "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-05",
                         "store_as": "workflow_prices",
                     },

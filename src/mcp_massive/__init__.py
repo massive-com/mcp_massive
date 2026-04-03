@@ -11,9 +11,9 @@ def main() -> None:
     Main CLI entry point for the MCP server.
     Accepts --transport CLI argument (falls back to MCP_TRANSPORT env var, then stdio).
 
-    Heavy dependencies (numpy, bm25s, etc.) are imported lazily
-    inside this function so that ``uv run`` can finish installing packages
-    and Python can start before the 30-second MCP connection timeout fires.
+    Heavy dependencies (numpy, etc.) are imported lazily inside this
+    function so that ``uv run`` can finish installing packages and Python
+    can start before the 30-second MCP connection timeout fires.
     """
     from dotenv import load_dotenv
 
@@ -75,7 +75,7 @@ def main() -> None:
         max_rows = int(os.environ["MASSIVE_MAX_ROWS"])
 
     # Defer importing server until after env vars are read — this triggers
-    # loading numpy, bm25s, and other heavy deps.
+    # loading numpy and other heavy deps.
     from .server import run, configure_credentials
 
     configure_credentials(

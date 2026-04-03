@@ -17,7 +17,6 @@ class TestStockAnalysis:
         store = await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-05",
                 "store_as": "aapl_bars",
             },
@@ -54,7 +53,6 @@ class TestMultiAssetComparison:
         stock_result = await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-05",
                 "store_as": "stocks",
             },
@@ -65,7 +63,6 @@ class TestMultiAssetComparison:
         crypto_result = await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v2/aggs/ticker/X:BTCUSD/range/1/day/2024-01-01/2024-01-03",
                 "store_as": "crypto",
             },
@@ -103,7 +100,6 @@ class TestOptionsChainWorkflow:
         call = await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v3/snapshot/options/AAPL",
                 "store_as": "options",
                 "params": {"contract_type": "call", "limit": "10"},
@@ -136,7 +132,6 @@ class TestApplyPipeline:
         result = await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-05",
                 "apply": [
                     {
@@ -156,7 +151,6 @@ class TestApplyPipeline:
         result = await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-05",
                 "store_as": "sma_test",
                 "apply": [
@@ -178,7 +172,6 @@ class TestApplyPipeline:
         await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-05",
                 "store_as": "apply_query_test",
             },
@@ -209,7 +202,6 @@ class TestDropAndReplace:
         await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-05",
                 "store_as": "temp",
             },
@@ -227,7 +219,6 @@ class TestDropAndReplace:
         restore = await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-05",
                 "store_as": "temp",
             },
@@ -242,7 +233,6 @@ class TestReferenceLookup:
         store = await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v3/reference/tickers",
                 "store_as": "tickers",
             },
@@ -278,7 +268,6 @@ class TestForexWorkflow:
         call = await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v2/aggs/ticker/C:EURUSD/range/1/day/2024-01-01/2024-01-03",
                 "store_as": "forex",
             },
@@ -307,7 +296,6 @@ class TestErrorResponses:
         result = await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v2/aggs/ticker/ERROR500/range/1/day/2024-01-01/2024-01-05",
             },
         )
@@ -322,7 +310,6 @@ class TestErrorResponses:
         result = await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v99/nonexistent/endpoint",
             },
         )
@@ -352,7 +339,6 @@ class TestPagination:
         result = await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v2/aggs/ticker/PAGINATED/range/1/day/2024-01-01/2024-01-05",
             },
         )
@@ -373,7 +359,6 @@ class TestPagination:
         result = await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v2/aggs/ticker/PAGINATED/range/1/day/2024-01-01/2024-01-05",
                 "store_as": "paginated_test",
             },
@@ -390,7 +375,6 @@ class TestPagination:
         result = await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-05",
             },
         )
