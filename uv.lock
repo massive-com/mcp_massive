@@ -41,18 +41,6 @@ wheels = [
 ]
 
 [[package]]
-name = "bm25s"
-version = "0.3.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "numpy" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/90/30/0a3f0772101750613ad4662ceb599fee007d2027e52ac917b7eedec6649b/bm25s-0.3.0.tar.gz", hash = "sha256:591aa454d03763bdbc89961823f03fde0016467ceb5a1438363ef1ec3f0a09c9", size = 73998, upload-time = "2026-02-17T19:38:57.214Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/0e/90/bc786debc06d7dce2f8385fbe7f8da8c52ca9b7a1f72516a11888c1af150/bm25s-0.3.0-py3-none-any.whl", hash = "sha256:ef515019afafdc5bc181af71097dab78928b76601a1f2745b5761c9bccb6e6dd", size = 69068, upload-time = "2026-02-17T19:38:55.902Z" },
-]
-
-[[package]]
 name = "certifi"
 version = "2026.2.25"
 source = { registry = "https://pypi.org/simple" }
@@ -313,14 +301,12 @@ name = "mcp-massive"
 version = "0.8.8"
 source = { editable = "." }
 dependencies = [
-    { name = "bm25s" },
     { name = "certifi" },
     { name = "httpx" },
     { name = "mcp" },
     { name = "numpy" },
     { name = "pydantic" },
     { name = "python-dotenv" },
-    { name = "snowballstemmer" },
     { name = "sqlglot" },
 ]
 
@@ -334,14 +320,12 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bm25s", specifier = ">=0.2.0" },
     { name = "certifi", specifier = ">=2026.2.25" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "mcp", specifier = ">=1.26.0" },
     { name = "numpy", specifier = ">=2.4.2" },
     { name = "pydantic", specifier = ">=2.12.0" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
-    { name = "snowballstemmer", specifier = ">=2.2.0" },
     { name = "sqlglot", specifier = ">=28.10.0" },
 ]
 
@@ -767,15 +751,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ab/75/33c2e887a68e57b356cda74d325d6ebe406bb72ad8c4e2d067d4fa9b697b/rust_just-1.46.0-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:e9d8a879fb86eb1c7f7f83953999ae4ce53ea4e5c0ca531cf6ff09e1e9335ff7", size = 1900319, upload-time = "2026-01-03T02:03:09.873Z" },
     { url = "https://files.pythonhosted.org/packages/44/30/6b1677aa64a4f69f3ec174b5e2a9a49e0ffd06946d4b4dc8295366fbd9dd/rust_just-1.46.0-py3-none-win32.whl", hash = "sha256:100701de91bded3f6f2bf564d09c2f8e483b8dfb490d1c74008ce3c01ff0ff67", size = 1623463, upload-time = "2026-01-03T02:03:12.343Z" },
     { url = "https://files.pythonhosted.org/packages/64/61/97ad7a1ea67b9485404b18150c258015842cf116a1ce626421863fd8f0e1/rust_just-1.46.0-py3-none-win_amd64.whl", hash = "sha256:ccaf8e473f64f5c815b0039e883a1feaf5634b9cdffd1dbff9e5fde77b5926f4", size = 1801103, upload-time = "2026-01-03T02:03:15.256Z" },
-]
-
-[[package]]
-name = "snowballstemmer"
-version = "3.0.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/75/a7/9810d872919697c9d01295633f5d574fb416d47e535f258272ca1f01f447/snowballstemmer-3.0.1.tar.gz", hash = "sha256:6d5eeeec8e9f84d4d56b847692bacf79bc2c8e90c7f80ca4444ff8b6f2e52895", size = 105575, upload-time = "2025-05-09T16:34:51.843Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c8/78/3565d011c61f5a43488987ee32b6f3f656e7f107ac2782dd57bdd7d91d9a/snowballstemmer-3.0.1-py3-none-any.whl", hash = "sha256:6cd7b3897da8d6c9ffb968a6781fa6532dce9c3618a4b127d920dab764a19064", size = 103274, upload-time = "2025-05-09T16:34:50.371Z" },
 ]
 
 [[package]]

@@ -5,8 +5,6 @@ import pytest
 from mcp_massive.index import (
     Endpoint,
     EndpointIndex,
-    QueryParam,
-    ResponseAttribute,
     parse_llms_txt,
     parse_llms_full_txt,
     parse_endpoint_section,
@@ -14,10 +12,7 @@ from mcp_massive.index import (
     parse_response_attributes,
     parse_table_rows,
     build_index,
-    _stem,
-    _tokenize,
-    _build_corpus_text,
-    _detect_market,
+    _expand_query,
     _path_prefix,
 )
 from tests.integration.mock_llms_txt import (
@@ -59,7 +54,6 @@ class TestParseEndpointSection:
         ep = parse_endpoint_section(aggs_section())
         assert ep is not None
         assert ep.title == "Custom Bars (OHLC)"
-        assert ep.method == "GET"
         assert "/v2/aggs/ticker/{stocksTicker}" in ep.path
         assert ep.market == "Stocks"
 
@@ -213,7 +207,6 @@ class TestParseLlmsFullTxt:
         first = entries[0]
         assert first.title == "Custom Bars (OHLC)"
         assert first.market == "Crypto"
-        assert first.method == "GET"
         assert "/v2/aggs/ticker/" in first.path
 
     def test_market_tracking(self):
@@ -262,142 +255,48 @@ class TestPathPrefix:
         assert _path_prefix("/v3/reference/tickers") == "/v3/reference/tickers"
 
 
-class TestStem:
-    def test_exchange_consistency(self):
-        """Both 'exchange' and 'exchanges' should produce the same stem."""
-        assert _stem("exchange") == _stem("exchanges")
-
-    def test_aggregate_consistency(self):
-        """Both 'aggregate' and 'aggregates' should produce the same stem."""
-        assert _stem("aggregate") == _stem("aggregates")
-
-    def test_ticker_stems(self):
-        assert _stem("tickers") == _stem("ticker")
-
-    def test_trading_stem(self):
-        stem = _stem("trading")
-        assert stem == "trade"
-
-    def test_adjusted_stem(self):
-        stem = _stem("adjusted")
-        assert stem == "adjust"
-
-    def test_no_stem_short_words(self):
-        # Short words should still produce something
-        assert len(_stem("as")) > 0
-        assert len(_stem("is")) > 0
-
-    def test_no_stem_needed(self):
-        assert _stem("crypto") == "crypto"
-        assert _stem("forex") == "forex"
-
-
-class TestTokenize:
-    def test_basic_tokenization(self):
-        tokens = _tokenize("Hello World 123")
-        assert "hello" in tokens
-        assert "world" in tokens
-        assert "123" in tokens
-
-    def test_strips_punctuation(self):
-        tokens = _tokenize("stock. (bars) ticker,")
-        # stems may differ from old custom stemmer
-        assert any("stock" in t for t in tokens)
-        assert any("ticker" in t or "ticker" == t for t in tokens)
+class TestExpandQuery:
+    def test_basic_terms(self):
+        q = _expand_query("Hello World 123")
+        assert "hello" in q
+        assert "world" in q
+        assert "123" in q
 
     def test_alias_expansion(self):
-        tokens = _tokenize("agg candle fx")
-        assert "aggregate" in tokens  # alias for "agg"
-        assert "forex" in tokens  # alias for "fx"
+        q = _expand_query("agg candle fx")
+        assert "aggregate" in q  # alias for "agg" and "candle"
+        assert "forex" in q  # alias for "fx"
 
-    def test_alias_keeps_stemmed_original(self):
-        # "candle" should produce both "aggregate" (alias) and stemmed "candle"
-        tokens = _tokenize("candle")
-        assert "aggregate" in tokens
-        assert _stem("candle") in tokens
-
-    def test_stemming_in_tokenize(self):
-        tokens = _tokenize("tickers dividends")
-        assert _stem("tickers") in tokens
-        assert _stem("dividends") in tokens
-
-    def test_stopword_removal(self):
-        tokens = _tokenize("the stock is a good one")
-        assert "the" not in tokens
-        assert "is" not in tokens
-        assert "a" not in tokens
+    def test_alias_keeps_original(self):
+        q = _expand_query("candle")
+        assert "aggregate" in q
+        assert "candle" in q
 
     def test_list_alias_expansion(self):
         """'price' should expand to multiple aliases."""
-        tokens = _tokenize("price")
-        assert "trade" in tokens
-        assert "aggregate" in tokens
-        assert "snapshot" in tokens
+        q = _expand_query("price")
+        assert "trade" in q
+        assert "aggregate" in q
+        assert "snapshot" in q
 
+    def test_empty_query(self):
+        assert _expand_query("") == ""
 
-class TestBuildCorpusText:
-    def test_repeats_name_and_market(self):
-        ep = Endpoint(
-            title="SMA",
-            method="GET",
-            path="/v1/indicators/sma/{stocksTicker}",
-            market="Stocks",
+    def test_deduplicates(self):
+        """Repeated tokens should not produce duplicate terms."""
+        q = _expand_query("agg agg")
+        assert q.count("aggregate") == 1
 
-            description="Get SMA for a stock ticker.",
-            path_prefix="/v1/indicators/sma/",
-        )
-        text = _build_corpus_text(ep)
-        assert text.count("SMA") >= 3
-        assert text.count("Stocks") >= 2
+    def test_underscore_terms_quoted(self):
+        """Alias values with underscores (e.g. bs_delta) should be quoted."""
+        q = _expand_query("delta")
+        assert '"bs_delta"' in q
+        assert "options" in q
 
-    def test_extracts_camel_case_params(self):
-        ep = Endpoint(
-            title="Aggregates",
-            method="GET",
-            path="/v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}",
-            market="Stocks",
-
-            description="Get aggs.",
-            path_prefix="/v2/aggs/ticker/",
-        )
-        text = _build_corpus_text(ep)
-        assert "stocks" in text.lower()
-        assert "ticker" in text.lower()
-
-    def test_extracts_path_segments(self):
-        ep = Endpoint(
-            title="Aggregates",
-            method="GET",
-            path="/v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}",
-            market="Stocks",
-
-            description="Get aggs.",
-            path_prefix="/v2/aggs/ticker/",
-        )
-        text = _build_corpus_text(ep)
-        assert "aggs" in text
-        assert "ticker" in text
-        assert "range" in text
-
-
-class TestDetectMarket:
-    def test_detects_stocks(self):
-        assert _detect_market("stock SMA") == "Stocks"
-
-    def test_detects_crypto(self):
-        assert _detect_market("crypto snapshot") == "Crypto"
-
-    def test_detects_forex(self):
-        assert _detect_market("forex rates") == "Forex"
-
-    def test_detects_options(self):
-        assert _detect_market("options chain") == "Options"
-
-    def test_no_market(self):
-        assert _detect_market("SMA") is None
-
-    def test_no_market_generic(self):
-        assert _detect_market("aggregate bars") is None
+    def test_or_joined(self):
+        """Terms should be joined with OR."""
+        q = _expand_query("stock trade")
+        assert " OR " in q
 
 
 class TestEndpointIndex:
@@ -405,28 +304,22 @@ class TestEndpointIndex:
         return [
             Endpoint(
                 title="Aggregates (Bars)",
-                method="GET",
                 path="/v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}",
                 market="Market Data",
-    
                 description="Get aggregate bars for a stock.",
                 path_prefix="/v2/aggs/ticker/",
             ),
             Endpoint(
                 title="Tickers",
-                method="GET",
                 path="/v3/reference/tickers",
                 market="Reference Data",
-
                 description="Query all ticker symbols.",
                 path_prefix="/v3/reference/tickers",
             ),
             Endpoint(
                 title="Last Trade",
-                method="GET",
                 path="/v2/last/trade/{stocksTicker}",
                 market="Market Data",
-
                 description="Get the most recent trade for a ticker.",
                 path_prefix="/v2/last/trade/",
             ),
@@ -505,46 +398,36 @@ class TestCrossAssetClassRanking:
         return [
             Endpoint(
                 title="SMA",
-                method="GET",
                 path="/v1/indicators/sma/{stocksTicker}",
                 market="Stocks",
-    
                 description="Get SMA for a stock ticker.",
                 path_prefix="/v1/indicators/sma/",
             ),
             Endpoint(
                 title="SMA",
-                method="GET",
                 path="/v1/indicators/sma/{cryptoTicker}",
                 market="Crypto",
-
                 description="Get SMA for a crypto ticker.",
                 path_prefix="/v1/indicators/sma/",
             ),
             Endpoint(
                 title="SMA",
-                method="GET",
                 path="/v1/indicators/sma/{forexTicker}",
                 market="Forex",
-
                 description="Get SMA for a forex ticker.",
                 path_prefix="/v1/indicators/sma/",
             ),
             Endpoint(
                 title="Unified Snapshot",
-                method="GET",
                 path="/v3/snapshot/{stocksTicker}",
                 market="Stocks",
-
                 description="Get unified snapshot for a stock ticker.",
                 path_prefix="/v3/snapshot/",
             ),
             Endpoint(
                 title="Unified Snapshot",
-                method="GET",
                 path="/v3/snapshot/{cryptoTicker}",
                 market="Crypto",
-
                 description="Get unified snapshot for a crypto ticker.",
                 path_prefix="/v3/snapshot/",
             ),
@@ -574,67 +457,89 @@ class TestCrossAssetClassRanking:
         markets = {ep.market for ep in results if ep.title == "SMA"}
         assert len(markets) >= 2
 
+    def test_stock_candlesticks_ranks_stocks_bars_first(self):
+        """'stock candlesticks' should rank Stocks OHLC bars above other markets."""
+        endpoints = [
+            Endpoint(
+                title="Merchant Aggregates",
+                path="/consumer-spending/eu/v1/merchant-aggregates",
+                market="Alternative",
+                description="Aggregated European consumer spending data.",
+                path_prefix="/consumer-spending/eu/v1/merchant-aggregates",
+            ),
+            Endpoint(
+                title="Aggregate Bars (OHLC)",
+                path="/futures/vX/aggs/{ticker}",
+                market="Futures",
+                description="Retrieve aggregated OHLC and volume data for futures.",
+                path_prefix="/futures/vX/aggs/",
+            ),
+            Endpoint(
+                title="Custom Bars (OHLC)",
+                path="/v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}",
+                market="Stocks",
+                description="Retrieve aggregated OHLC and volume data for a stock.",
+                path_prefix="/v2/aggs/ticker/",
+            ),
+            Endpoint(
+                title="Custom Bars (OHLC)",
+                path="/v2/aggs/ticker/{forexTicker}/range/{multiplier}/{timespan}/{from}/{to}",
+                market="Forex",
+                description="Retrieve aggregated OHLC and volume data for forex.",
+                path_prefix="/v2/aggs/ticker/",
+            ),
+        ]
+        idx = EndpointIndex(endpoints)
+        results = idx.search("stock candlesticks")
+        assert len(results) > 0
+        assert results[0].market == "Stocks"
+        assert "Bars" in results[0].title or "OHLC" in results[0].title
+
 
 class TestFinanceAliases:
-    """Test that finance-related aliases expand correctly."""
+    """Test that finance-related aliases expand correctly via _expand_query."""
 
     def test_delta_alias(self):
-        tokens = _tokenize("delta")
-        assert "bs_delta" in tokens
-        assert "options" in tokens
+        q = _expand_query("delta")
+        assert "bs_delta" in q
+        assert "options" in q
 
     def test_gamma_alias(self):
-        tokens = _tokenize("gamma")
-        assert "bs_gamma" in tokens
+        q = _expand_query("gamma")
+        assert "bs_gamma" in q
 
     def test_theta_alias(self):
-        tokens = _tokenize("theta")
-        assert "bs_theta" in tokens
+        q = _expand_query("theta")
+        assert "bs_theta" in q
 
     def test_vega_alias(self):
-        tokens = _tokenize("vega")
-        assert "bs_vega" in tokens
+        q = _expand_query("vega")
+        assert "bs_vega" in q
 
     def test_rho_alias(self):
-        tokens = _tokenize("rho")
-        assert "bs_rho" in tokens
+        q = _expand_query("rho")
+        assert "bs_rho" in q
 
     def test_blackscholes_alias(self):
-        tokens = _tokenize("blackscholes")
-        assert "bs_price" in tokens
-        assert "bs_delta" in tokens
+        q = _expand_query("blackscholes")
+        assert "bs_price" in q
+        assert "bs_delta" in q
 
     def test_greek_alias(self):
-        tokens = _tokenize("greek")
-        assert "greeks" in tokens
+        q = _expand_query("greek")
+        assert "greeks" in q
 
     def test_technical_alias(self):
-        tokens = _tokenize("technical")
-        assert "aggregate" in tokens
+        q = _expand_query("technical")
+        assert "aggregate" in q
 
     def test_indicator_alias(self):
-        tokens = _tokenize("indicator")
-        assert "aggregate" in tokens
+        q = _expand_query("indicator")
+        assert "aggregate" in q
 
     def test_moving_alias(self):
-        tokens = _tokenize("moving")
-        assert "aggregate" in tokens
-
-
-class TestStemmerConsistency:
-    """Test that the Snowball stemmer fixes the old custom stemmer's inconsistencies."""
-
-    def test_exchange_exchanges_same_stem(self):
-        assert _stem("exchange") == _stem("exchanges")
-
-    def test_aggregate_aggregates_same_stem(self):
-        assert _stem("aggregate") == _stem("aggregates")
-
-    def test_dividend_dividends_same_stem(self):
-        assert _stem("dividend") == _stem("dividends")
-
-    def test_ticker_tickers_same_stem(self):
-        assert _stem("ticker") == _stem("tickers")
+        q = _expand_query("moving")
+        assert "aggregate" in q
 
 
 class TestDeprecatedFilter:
@@ -776,7 +681,6 @@ class TestLlmsFullTxtE2E:
         for entry in entries:
             assert entry.title, f"Entry missing title: {entry}"
             assert entry.market, f"Entry missing market: {entry}"
-            assert entry.method, f"Entry missing method: {entry.title}"
             assert entry.path, f"Entry missing path: {entry.title}"
 
         # Most entries should have an endpoint path

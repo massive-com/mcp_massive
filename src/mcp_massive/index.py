@@ -1,23 +1,16 @@
 import os
 import re
 import logging
+import sqlite3
 import ssl
-from typing import Any
 
 import certifi
 import httpx
-import numpy as np
-import bm25s
 from pydantic import BaseModel, Field
-import snowballstemmer
-from bm25s.stopwords import STOPWORDS_EN
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_LLMS_FULL_TXT_URL = "https://massive.com/docs/rest/llms-full.txt"
-
-_snowball = snowballstemmer.stemmer("english")
-_STOPWORDS = frozenset(STOPWORDS_EN)
 
 
 class QueryParam(BaseModel):
@@ -36,7 +29,6 @@ class ResponseAttribute(BaseModel):
 class Endpoint(BaseModel):
     title: str = Field(min_length=1)
     path: str
-    method: str
     market: str
     description: str
     query_params: list[QueryParam] = []
@@ -48,7 +40,7 @@ class Endpoint(BaseModel):
     def format(self, detail: str = "default", counter: int = 1) -> str:
         """Format this endpoint for search results at the given detail level."""
         parts = [f"{counter}. {self.title} [{self.market}]"]
-        parts.append(f"   {self.method} {self.path}")
+        parts.append(f"   GET {self.path}")
         parts.append(f"   {self.description}")
 
         if detail in ("more", "verbose") and self.query_params:
@@ -63,7 +55,9 @@ class Endpoint(BaseModel):
                 for ra in self.response_attributes:
                     parts.append(f"   - {ra.name} ({ra.type}): {ra.description}")
             if self.sample_response:
-                parts.append(f"   Sample Response:\n   ```json\n   {self.sample_response}\n   ```")
+                parts.append(
+                    f"   Sample Response:\n   ```json\n   {self.sample_response}\n   ```"
+                )
 
         return "\n".join(parts)
 
@@ -75,16 +69,16 @@ _TOKEN_RE = re.compile(r"[a-z0-9]+")
 # Values can be a single string or a list of strings for ambiguous terms.
 ALIASES: dict[str, str | list[str]] = {
     # aggregates / bars / OHLC
-    "agg": "aggregate",
-    "aggs": "aggregate",
-    "candle": "aggregate",
-    "candles": "aggregate",
-    "candlestick": "aggregate",
-    "candlesticks": "aggregate",
-    "ohlc": "aggregate",
-    "ohlcv": "aggregate",
-    "bar": "aggregate",
-    "bars": "aggregate",
+    "agg": ["aggregate", "bars", "ohlc"],
+    "aggs": ["aggregate", "bars", "ohlc"],
+    "candle": ["aggregate", "bars", "ohlc"],
+    "candles": ["aggregate", "bars", "ohlc"],
+    "candlestick": ["aggregate", "bars", "ohlc"],
+    "candlesticks": ["aggregate", "bars", "ohlc"],
+    "ohlc": ["aggregate", "bars"],
+    "ohlcv": ["aggregate", "bars", "ohlc"],
+    "bar": ["aggregate", "bars", "ohlc"],
+    "bars": ["aggregate", "ohlc"],
     "historical": "aggregate",
     "history": "aggregate",
     "vwap": "aggregate",
@@ -221,7 +215,8 @@ ALIASES: dict[str, str | list[str]] = {
     "exchange": "exchanges",
 }
 
-# Market keywords for weight_mask boosting
+
+# Market keywords used to boost endpoints whose market matches the query.
 _MARKET_KEYWORDS: dict[str, set[str]] = {
     "Stocks": {"stock", "stocks", "equity", "equities", "share", "shares"},
     "Crypto": {"crypto", "cryptocurrency", "bitcoin", "btc", "eth", "coin"},
@@ -233,48 +228,6 @@ _MARKET_KEYWORDS: dict[str, set[str]] = {
 }
 
 
-def _stem(token: str) -> str:
-    """Stem using Snowball English stemmer."""
-    return _snowball.stemWord(token)
-
-
-def _tokenize(text: str) -> list[str]:
-    """Extract lowercase alphanumeric tokens, apply stopword removal, alias expansion and stemming."""
-    raw_tokens = _TOKEN_RE.findall(text.lower())
-    result = []
-    for tok in raw_tokens:
-        if tok in _STOPWORDS:
-            continue
-        # Alias expansion: add canonical form(s) AND the original stem
-        if tok in ALIASES:
-            val = ALIASES[tok]
-            if isinstance(val, list):
-                result.extend(val)
-            else:
-                result.append(val)
-        result.append(_stem(tok))
-    return result
-
-
-def _build_corpus_text(ep: Endpoint) -> str:
-    """Build enriched corpus text for an endpoint with field weighting."""
-    # Repeat title 3x and market 2x for BM25F-like field weighting
-    parts = [ep.title, ep.title, ep.title, ep.market, ep.market, ep.description]
-    # Extract camelCase path param tokens: {stocksTicker} -> "stocks", "ticker"
-    for param in re.findall(r"\{(\w+)\}", ep.path):
-        parts.extend(re.findall(r"[a-z]+", param))
-    # Extract meaningful path segments (skip version prefixes and param placeholders)
-    for seg in ep.path.split("/"):
-        if (
-            seg
-            and not seg.startswith("{")
-            and not re.match(r"^v\d", seg)
-            and len(seg) > 2
-        ):
-            parts.append(seg)
-    return " ".join(parts)
-
-
 def _detect_market(query: str) -> str | None:
     """Detect asset-class market from query keywords. Returns market name or None."""
     query_words = set(_TOKEN_RE.findall(query.lower()))
@@ -284,56 +237,123 @@ def _detect_market(query: str) -> str | None:
     return None
 
 
+def _expand_query(query: str) -> str:
+    """Expand aliases in a search query and format as an FTS5 MATCH expression.
+
+    Tokenizes the query into lowercase alphanumeric tokens, expands each
+    through the :data:`ALIASES` table, and joins them with ``OR`` so that
+    any matching term contributes to the BM25 score.
+    """
+    raw_tokens = _TOKEN_RE.findall(query.lower())
+    terms: list[str] = []
+    for tok in raw_tokens:
+        if tok in ALIASES:
+            val = ALIASES[tok]
+            if isinstance(val, list):
+                terms.extend(val)
+            else:
+                terms.append(val)
+        terms.append(tok)
+    # Deduplicate preserving insertion order
+    seen: set[str] = set()
+    unique: list[str] = []
+    for t in terms:
+        if t not in seen:
+            seen.add(t)
+            unique.append(t)
+    if not unique:
+        return ""
+    # Quote terms containing underscores so FTS5 treats the sub-tokens as a
+    # phrase (e.g. "bs_delta" → porter tokenises to "bs" "delta" adjacently).
+    # Plain alphanumeric terms are safe unquoted.
+    parts: list[str] = []
+    for t in unique:
+        if "_" in t:
+            parts.append(f'"{t}"')
+        else:
+            parts.append(t)
+    return " OR ".join(parts)
+
+
 class EndpointIndex:
+    """BM25-ranked endpoint search backed by SQLite FTS5.
+
+    Columns and their ``bm25()`` weights:
+        title (10.0), market (5.0), description (1.0), path_info (0.5)
+
+    FTS5's built-in porter tokenizer handles stemming at both index and
+    query time, so explicit stemming/stopword removal is unnecessary.
+    """
+
+    # Column weights passed to bm25(): title, market, description, path_info
+    _WEIGHTS = "10.0, 5.0, 1.0, 0.5"
+
+    # Market boost: multiply score by this factor when query mentions a market.
+    _MARKET_BOOST = 2.0
+
     def __init__(self, endpoints: list[Endpoint]):
         self._endpoints = endpoints
 
-        # Build market array for weight_mask
-        self._markets = [ep.market for ep in endpoints]
+        # Build FTS5 index in an in-memory SQLite database
+        self._conn = sqlite3.connect(":memory:", check_same_thread=False)
+        self._conn.execute(
+            "CREATE VIRTUAL TABLE ep_fts USING fts5("
+            "  title, market, description, path_info,"
+            "  tokenize='porter'"
+            ")"
+        )
 
-        # Build BM25 index
-        corpus = [_build_corpus_text(ep) for ep in endpoints]
-        tokenized = [_tokenize(doc) for doc in corpus]
-        if tokenized:
-            self._bm25 = bm25s.BM25()
-            self._bm25.index(tokenized)
-        else:
-            self._bm25 = None
+        for i, ep in enumerate(endpoints):
+            # path_info: camelCase param tokens + meaningful path segments
+            path_parts: list[str] = []
+            for param in re.findall(r"\{(\w+)\}", ep.path):
+                path_parts.extend(re.findall(r"[a-z]+", param))
+            for seg in ep.path.split("/"):
+                if (
+                    seg
+                    and not seg.startswith("{")
+                    and not re.match(r"^v\d", seg)
+                    and len(seg) > 2
+                ):
+                    path_parts.append(seg)
 
-        # Build regex allowlist from path prefixes
+            self._conn.execute(
+                "INSERT INTO ep_fts(rowid, title, market, description, path_info) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (i, ep.title, ep.market, ep.description, " ".join(path_parts)),
+            )
+
+        # Regex allowlist from path prefixes
         self._prefix_patterns = [
             re.compile("^" + re.escape(ep.path_prefix)) for ep in endpoints
         ]
 
     def search(self, query: str, top_k: int = 7) -> list[Endpoint]:
-        if self._bm25 is None:
+        if not self._endpoints:
             return []
-        tokenized_query = _tokenize(query)
 
-        # Build weight_mask for market boosting
-        retrieve_kwargs: dict[str, Any] = {
-            "k": min(top_k, len(self._endpoints)),
-        }
-        detected_market = _detect_market(query)
-        if detected_market and self._endpoints:
-            mask = np.ones(len(self._endpoints), dtype=np.float32)
-            for i, market in enumerate(self._markets):
-                if market == detected_market:
-                    mask[i] = 2.0
-            retrieve_kwargs["weight_mask"] = mask
+        fts_query = _expand_query(query)
+        if not fts_query:
+            return []
 
-        # retrieve expects a list of queries; we pass one and unpack
-        results, scores = self._bm25.retrieve(
-            [tokenized_query],
-            **retrieve_kwargs,
-        )
-        indices: list[int] = list(results[0])  # first (only) query
-        query_scores: list[float] = list(scores[0])
-        return [
-            self._endpoints[idx]
-            for idx, score in zip(indices, query_scores)
-            if score > 0
-        ]
+        # bm25() returns negative scores (lower = better).  When a market
+        # keyword is detected we multiply matching-market scores by the boost
+        # factor, making them more negative (= ranked higher).  When no market
+        # is detected the CASE always evaluates to 1.0 (no-op).
+        detected_market = _detect_market(query) or ""
+
+        try:
+            cursor = self._conn.execute(
+                f"SELECT rowid FROM ep_fts "
+                f"WHERE ep_fts MATCH ? "
+                f"ORDER BY bm25(ep_fts, {self._WEIGHTS}) "
+                f"  * CASE WHEN market = ? THEN ? ELSE 1.0 END "
+                f"LIMIT ?",
+                (fts_query, detected_market, self._MARKET_BOOST, top_k),
+            )
+            return [self._endpoints[row[0]] for row in cursor.fetchall()]
+        except sqlite3.OperationalError:
+            return []
 
     def is_path_allowed(self, path: str) -> bool:
         return any(pat.search(path) for pat in self._prefix_patterns)
@@ -361,7 +381,6 @@ def parse_llms_txt(text: str) -> list[dict]:
                 }
             )
     return entries
-
 
 
 _BULLET_PARAM_RE = re.compile(r"^-\s+\*{0,2}(\w+)\*{0,2}\s*\(([^)]+)\)(?::\s*(.*))?$")
@@ -463,7 +482,6 @@ def parse_endpoint_section(section: str) -> Endpoint | None:
     ep_match = re.search(r"\*\*Endpoint:\*\*\s*`(\w+)\s+(.+?)`", section)
     if not ep_match:
         return None
-    method = ep_match.group(1)
     path = ep_match.group(2)
 
     # Title and market from headings before the **Endpoint:** line
@@ -495,7 +513,6 @@ def parse_endpoint_section(section: str) -> Endpoint | None:
     return Endpoint(
         title=title,
         path=path,
-        method=method,
         market=market,
         description=description,
         query_params=parse_query_params(section),
