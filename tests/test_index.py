@@ -452,12 +452,12 @@ class TestCrossAssetClassRanking:
         assert len(snapshot_results) > 0
         assert snapshot_results[0].market == "Crypto"
 
-    def test_generic_sma_returns_multiple_markets(self):
-        """Generic 'SMA' (no asset class) should return results from multiple markets."""
+    def test_generic_sma_deduplicates_across_markets(self):
+        """Generic 'SMA' (no asset class) should return one SMA result (deduped by title)."""
         idx = EndpointIndex(self._make_cross_asset_endpoints())
         results = idx.search("SMA")
-        markets = {ep.market for ep in results if ep.title == "SMA"}
-        assert len(markets) >= 2
+        sma_results = [ep for ep in results if ep.title == "SMA"]
+        assert len(sma_results) == 1
 
     def test_stock_candlesticks_ranks_stocks_bars_first(self):
         """'stock candlesticks' should rank Stocks OHLC bars above other markets."""
