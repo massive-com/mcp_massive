@@ -23,15 +23,6 @@ class TestMissingArguments:
         result = await mcp_session.call_tool("search_endpoints", {})
         assert result.isError
 
-    @pytest.mark.asyncio
-    async def test_call_api_missing_method(self, mcp_session):
-        """call_api without method should return an error result."""
-        result = await mcp_session.call_tool(
-            "call_api",
-            {"path": "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-05"},
-        )
-        assert result.isError
-
 
 class TestHttpErrors:
     @pytest.mark.asyncio
@@ -40,7 +31,6 @@ class TestHttpErrors:
         result = await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v2/aggs/ticker/ERROR500/range/1/day/2024-01-01/2024-01-05",
             },
         )
@@ -54,7 +44,7 @@ class TestPathValidation:
     async def test_path_not_in_allowlist(self, mcp_session):
         result = await mcp_session.call_tool(
             "call_api",
-            {"method": "GET", "path": "/v1/unknown/endpoint"},
+            {"path": "/v1/unknown/endpoint"},
         )
         text = result.content[0].text
         assert "Error" in text
@@ -64,7 +54,7 @@ class TestPathValidation:
     async def test_path_traversal_dotdot(self, mcp_session):
         result = await mcp_session.call_tool(
             "call_api",
-            {"method": "GET", "path": "/v2/aggs/../../etc/passwd"},
+            {"path": "/v2/aggs/../../etc/passwd"},
         )
         text = result.content[0].text
         assert "Error" in text
@@ -74,7 +64,7 @@ class TestPathValidation:
     async def test_path_traversal_encoded(self, mcp_session):
         result = await mcp_session.call_tool(
             "call_api",
-            {"method": "GET", "path": "/v2/aggs/ticker/%2e%2e/%2e%2e/etc/passwd"},
+            {"path": "/v2/aggs/ticker/%2e%2e/%2e%2e/etc/passwd"},
         )
         text = result.content[0].text
         assert "Error" in text
@@ -84,7 +74,7 @@ class TestPathValidation:
     async def test_path_traversal_backslash(self, mcp_session):
         result = await mcp_session.call_tool(
             "call_api",
-            {"method": "GET", "path": "/v2/aggs\\..\\etc\\passwd"},
+            {"path": "/v2/aggs\\..\\etc\\passwd"},
         )
         text = result.content[0].text
         assert "Error" in text
@@ -142,7 +132,6 @@ class TestInvalidStoreName:
         result = await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-05",
                 "store_as": "invalid name with spaces!",
             },
@@ -158,7 +147,6 @@ class TestApplyErrors:
         result = await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-05",
                 "apply": [
                     {"function": "nonexistent_func", "inputs": {}, "output": "x"}
@@ -174,7 +162,6 @@ class TestApplyErrors:
         result = await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-05",
                 "store_as": "apply_err_test",
                 "apply": [

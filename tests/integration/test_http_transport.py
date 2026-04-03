@@ -106,7 +106,6 @@ class TestHttpTransport:
                 result = await session.call_tool(
                     "call_api",
                     {
-                        "method": "GET",
                         "path": "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-05",
                     },
                 )
@@ -127,7 +126,6 @@ class TestHttpTransport:
                 store_result = await session.call_tool(
                     "call_api",
                     {
-                        "method": "GET",
                         "path": "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-05",
                         "store_as": "http_prices",
                     },

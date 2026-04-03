@@ -181,7 +181,6 @@ class TestCallApi:
         result = await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-05",
             },
         )
@@ -203,7 +202,6 @@ class TestCallApi:
         result = await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-05",
                 "store_as": "prices",
             },
@@ -216,23 +214,10 @@ class TestCallApi:
         assert "v, vw, o, c, h, l, t, n" in text
 
     @pytest.mark.asyncio
-    async def test_rejects_post(self, mcp_session):
-        result = await mcp_session.call_tool(
-            "call_api",
-            {
-                "method": "POST",
-                "path": "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-05",
-            },
-        )
-        text = result.content[0].text
-        assert "Error" in text
-        assert "GET" in text
-
-    @pytest.mark.asyncio
     async def test_rejects_path_traversal(self, mcp_session):
         result = await mcp_session.call_tool(
             "call_api",
-            {"method": "GET", "path": "/v2/aggs/../../etc/passwd"},
+            {"path": "/v2/aggs/../../etc/passwd"},
         )
         text = result.content[0].text
         assert "Error" in text
@@ -242,7 +227,6 @@ class TestCallApi:
         result = await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-05",
                 "params": {"adjusted": "true", "limit": "5"},
             },
@@ -268,7 +252,6 @@ class TestQueryData:
         await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-05",
                 "store_as": "test_prices",
             },
@@ -292,7 +275,6 @@ class TestQueryData:
         await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-05",
                 "store_as": "show_test",
             },
@@ -306,7 +288,6 @@ class TestQueryData:
         await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-05",
                 "store_as": "desc_test",
             },
@@ -322,7 +303,6 @@ class TestQueryData:
         await mcp_session.call_tool(
             "call_api",
             {
-                "method": "GET",
                 "path": "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-05",
                 "store_as": "drop_test",
             },

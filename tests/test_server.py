@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock, AsyncMock
 import httpx
 import pytest
 
-from mcp_massive.index import Endpoint, EndpointIndex
+from mcp_massive.index import Endpoint, EndpointIndex, QueryParam
 from mcp_massive.functions import FunctionIndex
 from mcp_massive.server import (
     search_endpoints,
@@ -24,29 +24,36 @@ def _make_test_index():
     endpoints = [
         Endpoint(
             title="Aggregates Bars",
-            method="GET",
             path="/v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}",
             market="Market Data",
             description="Get aggregate bars for a stock",
             query_params=[
-                {"name": "adjusted", "type": "boolean", "required": False, "description": "Whether results are adjusted for splits"},
+                QueryParam(
+                    name="adjusted",
+                    type="boolean",
+                    required=False,
+                    description="Whether results are adjusted for splits",
+                ),
             ],
             path_prefix="/v2/aggs/ticker/",
         ),
         Endpoint(
             title="Tickers",
-            method="GET",
             path="/v3/reference/tickers",
             market="Reference Data",
             description="Query all ticker symbols",
             query_params=[
-                {"name": "search", "type": "string", "required": False, "description": "Search term"},
+                QueryParam(
+                    name="search",
+                    type="string",
+                    required=False,
+                    description="Search term",
+                ),
             ],
             path_prefix="/v3/reference/tickers",
         ),
         Endpoint(
             title="Last Trade",
-            method="GET",
             path="/v2/last/trade/{stocksTicker}",
             market="Market Data",
             description="Get the most recent trade for a ticker",
@@ -115,29 +122,20 @@ class TestSearchEndpoints:
 
 class TestCallApi:
     @pytest.mark.asyncio
-    async def test_rejects_non_get(self):
-        result = await call_api(
-            "POST",  # pyright: ignore[reportArgumentType]  # deliberately invalid to test rejection
-            "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
-        )
-        assert "Error" in result
-        assert "Only GET" in result
-
-    @pytest.mark.asyncio
     async def test_rejects_path_traversal(self):
-        result = await call_api("GET", "/v2/aggs/../../etc/passwd")
+        result = await call_api("/v2/aggs/../../etc/passwd")
         assert "Error" in result
         assert "path traversal" in result
 
     @pytest.mark.asyncio
     async def test_rejects_backslash(self):
-        result = await call_api("GET", "/v2/aggs\\ticker\\AAPL")
+        result = await call_api("/v2/aggs\\ticker\\AAPL")
         assert "Error" in result
         assert "path traversal" in result
 
     @pytest.mark.asyncio
     async def test_rejects_url_encoded_path_traversal(self):
-        result = await call_api("GET", "/v2/aggs/ticker/%2e%2e/%2e%2e/etc/passwd")
+        result = await call_api("/v2/aggs/ticker/%2e%2e/%2e%2e/etc/passwd")
         assert "Error" in result
         assert "path traversal" in result
 
@@ -145,7 +143,6 @@ class TestCallApi:
     async def test_rejects_missing_api_key(self):
         with patch("mcp_massive.server._get_api_key", return_value=""):
             result = await call_api(
-                "GET",
                 "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
             )
         assert "Error" in result
@@ -153,14 +150,13 @@ class TestCallApi:
 
     @pytest.mark.asyncio
     async def test_rejects_path_not_in_allowlist(self):
-        result = await call_api("GET", "/v1/unknown/endpoint")
+        result = await call_api("/v1/unknown/endpoint")
         assert "Error" in result
         assert "not in allowlist" in result
 
     @pytest.mark.asyncio
     async def test_rejects_invalid_query_param_keys(self):
         result = await call_api(
-            "GET",
             "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
             params={"valid_key": "ok", "bad key!": "nope"},
         )
@@ -182,7 +178,6 @@ class TestCallApi:
             patch("mcp_massive.server._get_api_key", return_value="test-key"),
         ):
             result = await call_api(
-                "GET",
                 "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
                 params={"adjusted": "true", "limit": "10"},
             )
@@ -206,7 +201,6 @@ class TestCallApi:
             patch("mcp_massive.server._get_store", return_value=test_store),
         ):
             result = await call_api(
-                "GET",
                 "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
                 store_as="prices",
             )
@@ -230,7 +224,6 @@ class TestCallApi:
             patch("mcp_massive.server._get_api_key", return_value="test-key"),
         ):
             result = await call_api(
-                "GET",
                 "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
             )
         # Without store_as, should return CSV as before
@@ -252,7 +245,6 @@ class TestCallApi:
             patch("mcp_massive.server._get_api_key", return_value="default-key"),
         ):
             await call_api(
-                "GET",
                 "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
                 api_key="custom-key",
             )
@@ -275,7 +267,6 @@ class TestCallApi:
             patch("mcp_massive.server._get_api_key", return_value="default-key"),
         ):
             await call_api(
-                "GET",
                 "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
             )
         # Verify the default key was used
@@ -300,7 +291,6 @@ class TestUserAgent:
             patch("mcp_massive.server._get_api_key", return_value="test-key"),
         ):
             await call_api(
-                "GET",
                 "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
             )
         _, kwargs = mock_client.get.call_args
@@ -326,7 +316,6 @@ class TestUserAgent:
             patch("mcp_massive.server._get_api_key", return_value="test-key"),
         ):
             await call_api(
-                "GET",
                 "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
             )
         _, kwargs = mock_client.get.call_args
@@ -350,7 +339,6 @@ class TestUserAgent:
             patch("mcp_massive.server._get_api_key", return_value="test-key"),
         ):
             await call_api(
-                "GET",
                 "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
             )
         _, kwargs = mock_client.get.call_args
@@ -499,7 +487,6 @@ class TestCallApiApply:
             patch("mcp_massive.server._get_store", return_value=test_store),
         ):
             result = await call_api(
-                "GET",
                 "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
                 store_as="prices",
                 apply=[
@@ -533,7 +520,6 @@ class TestCallApiApply:
             patch("mcp_massive.server._get_api_key", return_value="test-key"),
         ):
             result = await call_api(
-                "GET",
                 "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
                 apply=[
                     {
@@ -563,7 +549,6 @@ class TestCallApiApply:
             patch("mcp_massive.server._get_api_key", return_value="test-key"),
         ):
             result = await call_api(
-                "GET",
                 "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
                 apply=[
                     {
@@ -593,7 +578,6 @@ class TestCallApiApply:
             patch("mcp_massive.server._get_store", return_value=test_store),
         ):
             result = await call_api(
-                "GET",
                 "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
                 store_as="prices",
                 apply=[{"function": "nonexistent_func", "inputs": {}, "output": "x"}],
@@ -699,7 +683,6 @@ class TestResponseSizeLimit:
             patch("mcp_massive.server._get_api_key", return_value="test-key"),
         ):
             result = await call_api(
-                "GET",
                 "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
             )
         assert "Error" in result
@@ -720,7 +703,6 @@ class TestResponseSizeLimit:
             patch("mcp_massive.server._get_api_key", return_value="test-key"),
         ):
             result = await call_api(
-                "GET",
                 "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
             )
         assert "Error" not in result or "too large" not in result
@@ -733,24 +715,15 @@ class TestErrorMarket:
     async def test_auth_error_market(self):
         with patch("mcp_massive.server._get_api_key", return_value=""):
             result = await call_api(
-                "GET",
                 "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
             )
         assert "[AUTH]" in result
 
     @pytest.mark.asyncio
     async def test_not_found_error_market(self):
-        result = await call_api("GET", "/v1/unknown/endpoint")
+        result = await call_api("/v1/unknown/endpoint")
         assert "[NOT_FOUND]" in result
         assert "search_endpoints" in result
-
-    @pytest.mark.asyncio
-    async def test_invalid_request_error_market(self):
-        result = await call_api(
-            "POST",  # pyright: ignore[reportArgumentType]
-            "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
-        )
-        assert "[INVALID_REQUEST]" in result
 
     @pytest.mark.asyncio
     async def test_http_error_markets(self):
@@ -785,7 +758,6 @@ class TestErrorMarket:
                 patch("mcp_massive.server._get_api_key", return_value="key"),
             ):
                 result = await call_api(
-                    "GET",
                     "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
                 )
             assert f"[{expected_market}]" in result, (
@@ -807,7 +779,6 @@ class TestErrorMarket:
             patch("mcp_massive.server._get_api_key", return_value="key"),
         ):
             result = await call_api(
-                "GET",
                 "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
             )
         assert "[TOO_LARGE]" in result
@@ -884,7 +855,6 @@ class TestPaginationHint:
             patch("mcp_massive.server._get_api_key", return_value="test-key"),
         ):
             result = await call_api(
-                "GET",
                 "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
             )
         # Should contain both data and pagination hint
@@ -910,7 +880,6 @@ class TestPaginationHint:
             patch("mcp_massive.server._get_api_key", return_value="test-key"),
         ):
             result = await call_api(
-                "GET",
                 "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
             )
         assert "Next page" not in result
@@ -938,7 +907,6 @@ class TestPaginationHint:
             patch("mcp_massive.server._get_store", return_value=test_store),
         ):
             result = await call_api(
-                "GET",
                 "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
                 store_as="prices",
             )

@@ -9,11 +9,9 @@ dependencies = [
     "certifi>=2026.2.25",
     "httpx>=0.28.1",
     "numpy>=2.4.4",
-    "bm25s>=0.3.0",
-    "snowballstemmer>=3.0.1",
     "python-dotenv>=1.2.2",
     "pydantic>=2.12.5",
-    "sqlglot>=30.4.0",
+    "sqlglot>=30.4.0"
 ]
 [[project.authors]]
 name = "Massive"

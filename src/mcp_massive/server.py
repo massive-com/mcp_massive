@@ -219,7 +219,7 @@ async def search_endpoints(
         Optional[Literal["default", "more", "verbose"]],
         Field(
             description=(
-                'Level of detail per result. '
+                "Level of detail per result. "
                 '"default": title, path, and description. '
                 '"more": adds query parameter documentation. '
                 '"verbose": adds response attributes and sample response.'
@@ -247,7 +247,11 @@ async def search_endpoints(
 
     if show_functions:
         fidx = _get_func_index()
-        func_k = max_results if max_results is not None else (5 if scope == "functions" else 3)
+        func_k = (
+            max_results
+            if max_results is not None
+            else (5 if scope == "functions" else 3)
+        )
         func_results = fidx.search(query, top_k=func_k)
         for func in func_results:
             lines.append(
