@@ -44,7 +44,7 @@ class TestTable:
         assert t["AGE"] == [30]
 
     def test_from_records_deduplicates_case_insensitive_columns(self):
-        """Polygon.io returns both T (ticker) and t (timestamp)."""
+        """Massive.com returns both T (ticker) and t (timestamp)."""
         t = Table.from_records([{"T": "AAPL", "v": 100.0, "t": 1704067200000}])
         assert t.columns == ["T", "v", "t_2"]
         assert t["T"] == ["AAPL"]
@@ -580,8 +580,7 @@ class TestDuplicateColumnGuardrails:
         assert result.row_count == 1
 
         csv = s.query("SELECT T, v, t_2 FROM prices")
-        assert "AAPL" in csv
-        assert "1704067200000" in csv
+        assert csv == "T,v,t_2\nAAPL,45000000.0,1704067200000\n"
 
 
 class TestScalarSubqueryRewrite:
