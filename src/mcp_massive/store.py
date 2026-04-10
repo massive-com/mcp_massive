@@ -406,6 +406,7 @@ def _preprocess_sql(sql: str) -> str:
     """
     try:
         tree = sqlglot.parse_one(sql, dialect="sqlite")
+        assert isinstance(tree, exp.Expression)
         tree = _rewrite_count_filter(tree)
         sql = tree.sql(dialect="sqlite")
     except SQLParseError:

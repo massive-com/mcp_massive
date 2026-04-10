@@ -5,15 +5,15 @@ description = "A MCP server project"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "mcp>=1.26.0",
+    "mcp>=1.27.0",
     "certifi>=2026.2.25",
-    "httpx>=0.28.0",
-    "numpy>=2.4.2",
-    "bm25s>=0.2.0",
-    "snowballstemmer>=2.2.0",
-    "python-dotenv>=1.2.1",
-    "pydantic>=2.12.0",
-    "sqlglot>=28.10.0",
+    "httpx>=0.28.1",
+    "numpy>=2.4.4",
+    "bm25s>=0.3.0",
+    "snowballstemmer>=3.0.1",
+    "python-dotenv>=1.2.2",
+    "pydantic>=2.12.5",
+    "sqlglot>=30.4.0",
 ]
 [[project.authors]]
 name = "Massive"
@@ -35,7 +35,7 @@ dev = [
 constraint-dependencies = [
     "PyJWT>=2.12.0",
     "Pygments>=2.20.0",
-    "cryptography>=46.0.6",
+    "cryptography>=46.0.7",
 ]
 
 [tool.pytest.ini_options]
