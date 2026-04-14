@@ -9,6 +9,8 @@ from urllib.parse import unquote, urlparse, parse_qs
 
 import certifi
 import httpx
+import anyio
+import uvicorn
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.utilities.func_metadata import ArgModelBase
 from pydantic import Field
@@ -68,6 +70,7 @@ _base_url: str = "https://api.massive.com"
 _llms_txt_url: str | None = None
 _max_tables: int | None = None
 _max_rows: int | None = None
+_cors_origins: list[str] | None = None
 
 
 def configure_credentials(
@@ -76,15 +79,17 @@ def configure_credentials(
     llms_txt_url: str | None = None,
     max_tables: int | None = None,
     max_rows: int | None = None,
+    cors_origins: list[str] | None = None,
 ) -> None:
     """Store API credentials and config in module-level variables."""
-    global _api_key, _base_url, _llms_txt_url, _max_tables, _max_rows
+    global _api_key, _base_url, _llms_txt_url, _max_tables, _max_rows, _cors_origins
     with _init_lock:
         _api_key = api_key
         _base_url = base_url
         _llms_txt_url = llms_txt_url
         _max_tables = max_tables
         _max_rows = max_rows
+        _cors_origins = cors_origins
 
 
 def _get_api_key() -> str:
@@ -483,4 +488,35 @@ def run(transport: Literal["stdio", "sse", "streamable-http"] = "stdio") -> None
     ``initialize`` immediately without waiting for all doc pages to be
     fetched.
     """
-    mass_mcp.run(transport)
+    if transport in ("sse", "streamable-http"):
+        anyio.run(_run_http, transport)
+    else:
+        mass_mcp.run(transport)
+
+
+async def _run_http(transport: Literal["sse", "streamable-http"]) -> None:
+    """Run an HTTP transport, optionally with CORS middleware."""
+    if transport == "sse":
+        app = mass_mcp.sse_app()
+    else:
+        app = mass_mcp.streamable_http_app()
+
+    if _cors_origins:
+        from starlette.middleware.cors import CORSMiddleware
+
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=_cors_origins,
+            allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+            allow_headers=["*"],
+            expose_headers=["*"],
+        )
+
+    config = uvicorn.Config(
+        app,
+        host=mass_mcp.settings.host,
+        port=mass_mcp.settings.port,
+        log_level=mass_mcp.settings.log_level.lower(),
+    )
+    server = uvicorn.Server(config)
+    await server.serve()

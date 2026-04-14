@@ -6,8 +6,10 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "mcp>=1.27.0",
+    "anyio>=4.13.0",
     "certifi>=2026.2.25",
     "httpx>=0.28.1",
+    "uvicorn>=0.44.0",
     "numpy>=2.4.4",
     "bm25s>=0.3.0",
     "snowballstemmer>=3.0.1",

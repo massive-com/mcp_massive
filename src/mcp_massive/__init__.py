@@ -74,6 +74,11 @@ def main() -> None:
     if os.environ.get("MASSIVE_MAX_ROWS"):
         max_rows = int(os.environ["MASSIVE_MAX_ROWS"])
 
+    cors_origins_raw = os.environ.get("MASSIVE_CORS_ALLOW_ORIGIN", "")
+    cors_origins: list[str] = [
+        o.strip() for o in cors_origins_raw.split(",") if o.strip()
+    ]
+
     # Defer importing server until after env vars are read — this triggers
     # loading numpy, bm25s, and other heavy deps.
     from .server import run, configure_credentials
@@ -84,6 +89,7 @@ def main() -> None:
         llms_txt_url=llms_txt_url,
         max_tables=max_tables,
         max_rows=max_rows,
+        cors_origins=cors_origins or None,
     )
 
     run(transport=transport)
