@@ -2829,10 +2829,15 @@ class TestCorrAggregate:
     def test_zero_correlation(self):
         """Orthogonal data should produce near-zero correlation."""
         s = DataFrameStore()
-        s.store("data", [
-            {"x": 1, "y": 0}, {"x": -1, "y": 0},
-            {"x": 0, "y": 1}, {"x": 0, "y": -1},
-        ])
+        s.store(
+            "data",
+            [
+                {"x": 1, "y": 0},
+                {"x": -1, "y": 0},
+                {"x": 0, "y": 1},
+                {"x": 0, "y": -1},
+            ],
+        )
         result = s.query("SELECT CORR(x, y) as c FROM data")
         val = float(result.strip().split("\n")[1])
         assert abs(val) < 0.01
@@ -2840,11 +2845,16 @@ class TestCorrAggregate:
     def test_corr_with_nulls(self):
         """NULL pairs should be skipped."""
         s = DataFrameStore()
-        s.store("data", [
-            {"x": 1, "y": 2}, {"x": None, "y": 5},
-            {"x": 3, "y": 6}, {"x": 4, "y": None},
-            {"x": 5, "y": 10},
-        ])
+        s.store(
+            "data",
+            [
+                {"x": 1, "y": 2},
+                {"x": None, "y": 5},
+                {"x": 3, "y": 6},
+                {"x": 4, "y": None},
+                {"x": 5, "y": 10},
+            ],
+        )
         # Should only use the 3 complete pairs: (1,2), (3,6), (5,10)
         result = s.query("SELECT CORR(x, y) as c FROM data")
         val = float(result.strip().split("\n")[1])

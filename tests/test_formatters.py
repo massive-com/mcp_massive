@@ -586,9 +586,7 @@ class TestExtractRecords:
 
     def test_results_list_single_item_not_expanded(self):
         """When results is a proper list with 1 item, nested lists stay stringified."""
-        data = {
-            "results": [{"id": 1, "tags": [{"name": "a"}, {"name": "b"}]}]
-        }
+        data = {"results": [{"id": 1, "tags": [{"name": "a"}, {"name": "b"}]}]}
         records = extract_records(data)
         assert len(records) == 1
         assert records[0]["id"] == 1
