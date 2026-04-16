@@ -730,7 +730,7 @@ class FunctionIndex:
 
         self._conn = sqlite3.connect(":memory:", check_same_thread=False)
         self._conn.execute(
-            "CREATE VIRTUAL TABLE fn_fts USING fts5(  search_text, tokenize='porter')"
+            "CREATE VIRTUAL TABLE fn_fts USING fts5( search_text, tokenize='porter')"
         )
         for i, func in enumerate(self._functions):
             self._conn.execute(
