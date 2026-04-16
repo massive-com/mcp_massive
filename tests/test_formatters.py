@@ -552,3 +552,56 @@ class TestExtractRecords:
         records = extract_records(data)
         assert len(records) == 3
         assert records[0] == {"value": "1"}
+
+    def test_single_record_with_nested_list_of_dicts_expands(self):
+        """Gainers/snapshot pattern: {"tickers": [{...}, ...]} becomes multiple rows."""
+        data = {
+            "tickers": [
+                {"ticker": "AAPL", "change": 5.2},
+                {"ticker": "MSFT", "change": 3.1},
+            ]
+        }
+        records = extract_records(data)
+        assert len(records) == 2
+        assert records[0]["ticker"] == "AAPL"
+        assert records[1]["ticker"] == "MSFT"
+
+    def test_single_record_with_nested_list_carries_parent_scalars(self):
+        """Indicator pattern: scalar fields from parent propagate to each row."""
+        data = {
+            "results": {
+                "underlying": {"url": "https://example.com/aggs"},
+                "values": [
+                    {"timestamp": 100, "value": 62.24},
+                    {"timestamp": 200, "value": 58.91},
+                ],
+            }
+        }
+        records = extract_records(data)
+        assert len(records) == 2
+        assert records[0]["timestamp"] == 100
+        assert records[0]["value"] == 62.24
+        assert records[0]["underlying_url"] == "https://example.com/aggs"
+        assert records[1]["underlying_url"] == "https://example.com/aggs"
+
+    def test_results_list_single_item_not_expanded(self):
+        """When results is a proper list with 1 item, nested lists stay stringified."""
+        data = {
+            "results": [{"id": 1, "tags": [{"name": "a"}, {"name": "b"}]}]
+        }
+        records = extract_records(data)
+        assert len(records) == 1
+        assert records[0]["id"] == 1
+        assert "a" in str(records[0]["tags"])
+
+    def test_plain_list_single_item_not_expanded(self):
+        """A plain list with 1 dict item should not expand nested lists."""
+        data = [{"id": 1, "items": [{"x": 10}, {"x": 20}]}]
+        records = extract_records(data)
+        assert len(records) == 1
+
+    def test_nested_expansion_with_empty_inner_list(self):
+        """Empty inner list should not trigger expansion."""
+        data = {"tickers": []}
+        records = extract_records(data)
+        assert len(records) == 1  # single record wrapping the empty dict

@@ -40,6 +40,16 @@ _BLOCKED_FUNC_NAMES: frozenset[str] = frozenset(
     }
 )
 
+# Custom functions registered via _register_custom_functions that sqlglot
+# does not recognise (it parses them as Anonymous nodes).  These are safe
+# and must be explicitly allowed through the AST validator.
+_CUSTOM_ANONYMOUS_FUNCTIONS: frozenset[str] = frozenset(
+    {
+        "to_timestamp",
+        "to_date",
+    }
+)
+
 DEFAULT_MAX_TABLES = 50
 DEFAULT_MAX_ROWS = 50_000
 TTL_SECONDS = 3600
@@ -58,6 +68,9 @@ _AUTHORIZER_ALLOWED_FUNCTIONS: frozenset[str] = frozenset(
         "concat",
         "stddev",
         "stddev_samp",
+        "corr",
+        "to_timestamp",
+        "to_date",
         # Standard SQLite aggregates / scalars
         "count",
         "sum",
@@ -345,6 +358,103 @@ class _StddevAggregate:
         return math.sqrt(variance)
 
 
+class _CorrAggregate:
+    """SQLite custom aggregate for Pearson correlation coefficient."""
+
+    def __init__(self) -> None:
+        self.xs: list[float] = []
+        self.ys: list[float] = []
+
+    def step(self, x: float | None, y: float | None) -> None:
+        if x is not None and y is not None:
+            self.xs.append(float(x))
+            self.ys.append(float(y))
+
+    def finalize(self) -> float | None:
+        n = len(self.xs)
+        if n < 2:
+            return None
+        mean_x = sum(self.xs) / n
+        mean_y = sum(self.ys) / n
+        cov = sum((x - mean_x) * (y - mean_y) for x, y in zip(self.xs, self.ys))
+        var_x = sum((x - mean_x) ** 2 for x in self.xs)
+        var_y = sum((y - mean_y) ** 2 for y in self.ys)
+        denom = math.sqrt(var_x * var_y)
+        if denom == 0:
+            return None
+        return cov / denom
+
+
+def _epoch_to_seconds(value: float | int) -> float:
+    """Normalize a numeric epoch timestamp (seconds, ms, or ns) to seconds.
+
+    Heuristic based on digit count:
+      - 10 digits → seconds   (unix epoch ~1.7e9)
+      - 13 digits → ms        (most Massive API fields: ``t``, ``sip_timestamp``)
+      - 16+ digits → ns       (snapshot ``last_updated`` fields)
+    """
+    v = float(value)
+    abs_v = abs(v)
+    if abs_v > 1e15:  # nanoseconds
+        return v / 1e9
+    if abs_v > 1e11:  # milliseconds
+        return v / 1e3
+    return v  # already seconds
+
+
+def _to_timestamp(value: float | int | str | None) -> str | None:
+    """Convert a timestamp to ISO-8601 UTC datetime string.
+
+    Accepts epoch seconds/ms/ns (auto-detected by magnitude) or an
+    ISO-8601 string (returned as-is after validation).
+    """
+    if value is None:
+        return None
+    from datetime import datetime, timezone
+
+    if isinstance(value, str):
+        # Already a string timestamp — return as-is if it looks like a date
+        stripped = value.strip()
+        if stripped and (stripped[0].isdigit() or stripped[0] == "-"):
+            # Might be a numeric string — try parsing as number
+            try:
+                return _to_timestamp(float(stripped))
+            except ValueError:
+                pass
+        return stripped  # ISO-8601 or date string — pass through
+
+    return datetime.fromtimestamp(_epoch_to_seconds(value), tz=timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+
+
+def _to_date(value: float | int | str | None) -> str | None:
+    """Convert a timestamp to a UTC date string (YYYY-MM-DD).
+
+    Accepts epoch seconds/ms/ns (auto-detected by magnitude) or an
+    ISO-8601 string.  Useful for cross-asset JOINs where crypto bars
+    use midnight UTC and equity bars use 4 AM ET.
+    """
+    if value is None:
+        return None
+    from datetime import datetime, timezone
+
+    if isinstance(value, str):
+        stripped = value.strip()
+        # If it already looks like YYYY-MM-DD, return the date portion
+        if len(stripped) >= 10 and stripped[4] == "-" and stripped[7] == "-":
+            return stripped[:10]
+        # Numeric string
+        try:
+            return _to_date(float(stripped))
+        except ValueError:
+            return stripped
+
+    return datetime.fromtimestamp(_epoch_to_seconds(value), tz=timezone.utc).strftime(
+        "%Y-%m-%d"
+    )
+
+
 def _register_custom_functions(conn: sqlite3.Connection) -> None:
     """Register math and string functions that SQLite lacks."""
     conn.create_function("SQRT", 1, lambda x: math.sqrt(x) if x is not None else None)
@@ -358,11 +468,14 @@ def _register_custom_functions(conn: sqlite3.Connection) -> None:
     conn.create_function(
         "CONCAT", -1, lambda *args: "".join(str(a) for a in args if a is not None)
     )
+    conn.create_function("TO_TIMESTAMP", 1, _to_timestamp)
+    conn.create_function("TO_DATE", 1, _to_date)
     # The typeshed _AggregateProtocol uses narrow int types in its stubs,
     # but sqlite3 accepts any scalar at runtime.  Use cast(Any, ...) so
     # the type checker does not reject the class.
     conn.create_aggregate("STDDEV", 1, cast(Any, _StddevAggregate))
     conn.create_aggregate("STDDEV_SAMP", 1, cast(Any, _StddevAggregate))
+    conn.create_aggregate("CORR", 2, cast(Any, _CorrAggregate))
 
 
 def _rewrite_count_filter(tree: exp.Expression) -> exp.Expression:
@@ -701,8 +814,9 @@ class DataFrameStore:
         for node in stmt.find_all(exp.Func):
             if isinstance(node, (exp.Anonymous, exp.AnonymousAggFunc)):
                 # Anonymous nodes are functions sqlglot doesn't recognise —
-                # block them since they may be dangerous extensions.
-                raise ValueError(f"Function not allowed: {node.name}")
+                # block them unless they are our own custom functions.
+                if node.name.lower() not in _CUSTOM_ANONYMOUS_FUNCTIONS:
+                    raise ValueError(f"Function not allowed: {node.name}")
             # Safety net: check SQL name against the explicit denylist
             # even if sqlglot gives them a typed Func subclass.
             try:

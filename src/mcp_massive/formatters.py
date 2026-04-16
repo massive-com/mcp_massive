@@ -35,10 +35,16 @@ def extract_records(data: str | dict | list) -> list[dict]:
         except json.JSONDecodeError:
             return []
 
+    # Track whether "results" was a proper list — if so, the record count is
+    # authoritative and we should not re-interpret a single result's nested
+    # lists as the "real" row data.
+    results_was_list = False
+
     if isinstance(data, dict) and "results" in data:
         results_value = data["results"]
         if isinstance(results_value, list):
             records = results_value
+            results_was_list = True
         elif isinstance(results_value, dict):
             records = [results_value]
         else:
@@ -47,8 +53,36 @@ def extract_records(data: str | dict | list) -> list[dict]:
         records = [data["last"]] if isinstance(data["last"], dict) else [data]
     elif isinstance(data, list):
         records = data
+        results_was_list = True
     else:
         records = [data]
+
+    # If we got a single record containing a list-of-dicts value AND it did
+    # NOT come from a proper results list, that inner list is the real row
+    # data.  This handles API responses like:
+    #   {"tickers": [{...}, ...]}            (snapshots / gainers)
+    #   {"underlying": {...}, "values": [...]} (technical indicators via
+    #       "results" as a dict, not a list)
+    if len(records) == 1 and isinstance(records[0], dict) and not results_was_list:
+        record = records[0]
+        for key, val in record.items():
+            if isinstance(val, list) and val and isinstance(val[0], dict):
+                # Carry forward scalar fields from the parent record
+                parent_fields: dict[str, Any] = {}
+                for pk, pv in record.items():
+                    if pk == key:
+                        continue
+                    if isinstance(pv, dict):
+                        for fk, fv in _flatten_dict(pv, pk).items():
+                            if not isinstance(fv, (dict, list)):
+                                parent_fields[fk] = fv
+                    elif not isinstance(pv, list):
+                        parent_fields[pk] = pv
+                records = [
+                    {**parent_fields, **item} if isinstance(item, dict) else item
+                    for item in val
+                ]
+                break
 
     flattened_records = []
     for record in records:
