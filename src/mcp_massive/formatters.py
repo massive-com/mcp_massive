@@ -57,32 +57,57 @@ def extract_records(data: str | dict | list) -> list[dict]:
     else:
         records = [data]
 
-    # If we got a single record containing a list-of-dicts value AND it did
-    # NOT come from a proper results list, that inner list is the real row
-    # data.  This handles API responses like:
-    #   {"tickers": [{...}, ...]}            (snapshots / gainers)
-    #   {"underlying": {...}, "values": [...]} (technical indicators via
+    # If we got a single record containing list-of-dicts values AND it did
+    # NOT come from a proper results list, those inner lists are the real
+    # row data.  This handles API responses like:
+    #   {"tickers": [{...}, ...]}                (snapshots / gainers)
+    #   {"underlying": {...}, "values": [...]}   (technical indicators via
     #       "results" as a dict, not a list)
+    #   {"dividends": [...], "splits": [...]}    (hypothetical multi-list
+    #       responses — rows from every list are emitted and tagged with
+    #       a ``_source`` column so downstream can disambiguate)
     if len(records) == 1 and isinstance(records[0], dict) and not results_was_list:
         record = records[0]
-        for key, val in record.items():
-            if isinstance(val, list) and val and isinstance(val[0], dict):
-                # Carry forward scalar fields from the parent record
-                parent_fields: dict[str, Any] = {}
-                for pk, pv in record.items():
-                    if pk == key:
-                        continue
-                    if isinstance(pv, dict):
-                        for fk, fv in _flatten_dict(pv, pk).items():
-                            if not isinstance(fv, (dict, list)):
-                                parent_fields[fk] = fv
-                    elif not isinstance(pv, list):
-                        parent_fields[pk] = pv
-                records = [
-                    {**parent_fields, **item} if isinstance(item, dict) else item
-                    for item in val
-                ]
-                break
+        list_of_dict_keys = [
+            k
+            for k, v in record.items()
+            if isinstance(v, list) and v and isinstance(v[0], dict)
+        ]
+        if list_of_dict_keys:
+            chosen = set(list_of_dict_keys)
+            # Carry every sibling value into the child rows.  Sibling lists
+            # (of any kind) are stringified rather than silently dropped —
+            # this matches _flatten_dict's treatment of list values.
+            parent_fields: dict[str, Any] = {}
+            for pk, pv in record.items():
+                if pk in chosen:
+                    continue
+                if isinstance(pv, dict):
+                    for fk, fv in _flatten_dict(pv, pk).items():
+                        if not isinstance(fv, (dict, list)):
+                            parent_fields[fk] = fv
+                elif isinstance(pv, list):
+                    parent_fields[pk] = str(pv)
+                else:
+                    parent_fields[pk] = pv
+            # Emit rows from every list-of-dicts key.  When multiple such
+            # keys exist, tag each row with its source so overlapping
+            # column names (e.g. "date" in both dividends and splits) do
+            # not collide ambiguously downstream.
+            tag_source = len(list_of_dict_keys) > 1
+            new_records: list = []
+            for key in list_of_dict_keys:
+                for item in record[key]:
+                    if isinstance(item, dict):
+                        row = {**parent_fields, **item}
+                        if tag_source:
+                            row["_source"] = key
+                        new_records.append(row)
+                    else:
+                        # Preserve non-dict list entries; the final
+                        # flattening step wraps them as {"value": ...}.
+                        new_records.append(item)
+            records = new_records
 
     flattened_records = []
     for record in records:
