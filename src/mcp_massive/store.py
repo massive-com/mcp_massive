@@ -442,7 +442,7 @@ def _to_date(value: float | int | str | None) -> str | None:
     if isinstance(value, str):
         stripped = value.strip()
         # If it already looks like YYYY-MM-DD, return the date portion
-        if len(stripped) >= 10 and stripped[4] == "-" and stripped[7] == "-":
+        if re.compile(r"^\d{4}-\d{2}-\d{2}").match(stripped):
             return stripped[:10]
         # Numeric string
         try:
