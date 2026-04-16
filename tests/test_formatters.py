@@ -603,3 +603,81 @@ class TestExtractRecords:
         data = {"tickers": []}
         records = extract_records(data)
         assert len(records) == 1  # single record wrapping the empty dict
+
+    def test_multiple_list_of_dicts_keys_all_unpacked_with_source_tag(self):
+        """When a record has more than one list-of-dicts key, rows from
+        every list must be emitted (not just the first) and tagged with
+        a ``_source`` column so downstream can disambiguate overlapping
+        column names like ``date``."""
+        data = {
+            "dividends": [
+                {"date": "2025-01-15", "amount": 0.25},
+                {"date": "2025-04-15", "amount": 0.25},
+            ],
+            "splits": [
+                {"date": "2024-06-01", "ratio": 2},
+            ],
+        }
+        records = extract_records(data)
+        assert len(records) == 3
+        sources = [r["_source"] for r in records]
+        assert sources == ["dividends", "dividends", "splits"]
+        # Dividend fields on dividend rows
+        assert records[0]["amount"] == 0.25
+        assert records[1]["amount"] == 0.25
+        # Split fields on split row
+        assert records[2]["ratio"] == 2
+
+    def test_single_list_of_dicts_key_omits_source_tag(self):
+        """With only one list-of-dicts key, no ``_source`` column is
+        added — preserves existing single-list behavior."""
+        data = {"tickers": [{"ticker": "AAPL"}, {"ticker": "MSFT"}]}
+        records = extract_records(data)
+        assert len(records) == 2
+        assert "_source" not in records[0]
+        assert "_source" not in records[1]
+
+    def test_sibling_list_of_scalars_preserved_as_string(self):
+        """Sibling list-of-scalars values are stringified into parent_fields
+        rather than silently dropped."""
+        data = {
+            "ticker": "AAPL",
+            "tags": ["new", "featured"],
+            "values": [{"timestamp": 100, "value": 62.24}],
+        }
+        records = extract_records(data)
+        assert len(records) == 1
+        assert records[0]["ticker"] == "AAPL"
+        # tags list is stringified, not dropped
+        assert "new" in records[0]["tags"]
+        assert "featured" in records[0]["tags"]
+        assert records[0]["timestamp"] == 100
+
+    def test_multiple_lists_carry_scalar_parents_to_every_row(self):
+        """Scalar siblings propagate to rows from every list-of-dicts key."""
+        data = {
+            "ticker": "AAPL",
+            "as_of": "2025-01-15",
+            "dividends": [{"amount": 0.25}],
+            "splits": [{"ratio": 2}],
+        }
+        records = extract_records(data)
+        assert len(records) == 2
+        for r in records:
+            assert r["ticker"] == "AAPL"
+            assert r["as_of"] == "2025-01-15"
+
+    def test_mixed_empty_and_nonempty_list_of_dicts_siblings(self):
+        """Empty lists stringify into parent_fields (not chosen as a row
+        source); the non-empty list drives row expansion."""
+        data = {
+            "dividends": [],
+            "splits": [{"ratio": 2, "date": "2024-06-01"}],
+        }
+        records = extract_records(data)
+        assert len(records) == 1
+        assert records[0]["ratio"] == 2
+        # Empty list stringified, not dropped
+        assert "dividends" in records[0]
+        # Single-source path → no _source tag
+        assert "_source" not in records[0]
