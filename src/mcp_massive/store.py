@@ -5,6 +5,7 @@ import re
 import sqlite3
 import time
 from typing import Any, cast
+from datetime import datetime, timezone
 
 import sqlglot
 from sqlglot import exp
@@ -40,13 +41,26 @@ _BLOCKED_FUNC_NAMES: frozenset[str] = frozenset(
     }
 )
 
-# Custom functions registered via _register_custom_functions that sqlglot
-# does not recognise (it parses them as Anonymous nodes).  These are safe
-# and must be explicitly allowed through the AST validator.
+# Custom functions registered via _register_custom_functions, plus FTS5
+# ranking/highlighting built-ins, that sqlglot parses as Anonymous nodes.
+# These are safe and must be explicitly allowed through the AST validator.
 _CUSTOM_ANONYMOUS_FUNCTIONS: frozenset[str] = frozenset(
     {
         "to_timestamp",
         "to_date",
+        # FTS5 ranking and highlighting built-ins
+        "bm25",
+        "snippet",
+        "highlight",
+    }
+)
+
+# SQLite read-only PRAGMAs the authorizer must allow because FTS5 invokes
+# them internally during MATCH queries.  Users cannot trigger these: the
+# statement-type check in _validate_sql rejects any user-issued PRAGMA.
+_AUTHORIZER_ALLOWED_PRAGMAS: frozenset[str] = frozenset(
+    {
+        "data_version",
     }
 )
 
@@ -54,6 +68,10 @@ DEFAULT_MAX_TABLES = 50
 DEFAULT_MAX_ROWS = 50_000
 TTL_SECONDS = 3600
 QUERY_TIMEOUT_SECONDS = 30
+# Cells in a StoreSummary preview are capped tightly — the preview is meant
+# to convey schema and shape, not content.  Long-text rows (e.g. filings)
+# would otherwise blow up the call_api response in tokens.
+PREVIEW_MAX_CELL_CHARS = 200
 
 # Functions allowed through the SQLite authorizer.  This must include every
 # custom function registered via _register_custom_functions as well as safe
@@ -129,6 +147,11 @@ _AUTHORIZER_ALLOWED_FUNCTIONS: frozenset[str] = frozenset(
         "unlikely",
         # CASE is not a function but some drivers report it
         "case",
+        # FTS5 MATCH operator and ranking/highlighting built-ins
+        "match",
+        "bm25",
+        "snippet",
+        "highlight",
     }
 )
 
@@ -152,7 +175,31 @@ def _select_only_authorizer(
         if arg2 is not None and arg2.lower() in _AUTHORIZER_ALLOWED_FUNCTIONS:
             return sqlite3.SQLITE_OK
         return sqlite3.SQLITE_DENY
+    # FTS5 issues PRAGMA data_version internally to detect schema changes.
+    # User-issued PRAGMAs are already blocked by _validate_sql, so this is
+    # only reachable for trusted internal callers.
+    if action == sqlite3.SQLITE_PRAGMA:
+        if arg1 is not None and arg1.lower() in _AUTHORIZER_ALLOWED_PRAGMAS:
+            return sqlite3.SQLITE_OK
+        return sqlite3.SQLITE_DENY
     return sqlite3.SQLITE_DENY
+
+
+def _truncate_cell(value: Any, max_chars: int) -> Any:
+    """Return *value* unchanged unless its string form exceeds *max_chars*.
+
+    When truncation fires, the returned string ends with a marker like
+    ``... [truncated: N more chars]`` so an LLM caller can see how much
+    was elided and decide whether to re-query with ``max_cell_chars=0``
+    or a tighter ``WHERE`` clause.
+    """
+    if value is None:
+        return None
+    s = value if isinstance(value, str) else str(value)
+    if len(s) <= max_chars:
+        return value
+    excess = len(s) - max_chars
+    return f"{s[:max_chars]}... [truncated: {excess} more chars]"
 
 
 class Table:
@@ -234,12 +281,25 @@ class Table:
         length = len(self)
         return [tuple(self.data[col][i] for col in self.columns) for i in range(length)]
 
-    def write_csv(self) -> str:
+    def write_csv(self, max_cell_chars: int = 0) -> str:
+        """Serialize the table as CSV.
+
+        If ``max_cell_chars > 0``, any cell whose string representation
+        exceeds that length is truncated with a visible marker so the
+        caller knows how many characters were omitted.  Useful for
+        long FTS5 TEXT columns (e.g. 10-K risk factors) where a single
+        row can be thousands of tokens.  ``max_cell_chars = 0`` leaves
+        all cells untouched.
+        """
         buf = io.StringIO()
         writer = csv.writer(buf, lineterminator="\n")
         writer.writerow(self.columns)
-        for row in self.rows():
-            writer.writerow(row)
+        if max_cell_chars <= 0:
+            for row in self.rows():
+                writer.writerow(row)
+        else:
+            for row in self.rows():
+                writer.writerow(tuple(_truncate_cell(v, max_cell_chars) for v in row))
         return buf.getvalue()
 
     def get_column(self, name: str) -> list:
@@ -323,18 +383,55 @@ def _infer_sqlite_affinity(values: list) -> str:
     return "TEXT"
 
 
+# FTS5 reserves these identifiers; a user column with this name collides
+# with the virtual table's own hidden columns, so we fall back to a plain
+# table when any column uses one of these names.
+_FTS5_RESERVED_COLUMN_NAMES: frozenset[str] = frozenset({"rank", "rowid"})
+
+
 def _create_and_populate_table(
     conn: sqlite3.Connection, name: str, table: Table
 ) -> None:
-    """Create a SQLite table from a Table and bulk-insert rows."""
+    """Create a SQLite table from a Table and bulk-insert rows.
+
+    When at least one column has TEXT affinity and there are no
+    FTS5-reserved column-name collisions, the table is created as an
+    FTS5 virtual table with non-text columns marked ``UNINDEXED``.
+    This lets users run ``WHERE {name} MATCH 'query'`` directly on
+    the base table — no mirror, no JOIN.  FTS5 preserves SQLite's
+    dynamic type for stored values, so numeric ORDER BY and
+    SUM/AVG/MIN/MAX work as they would on a plain table.
+
+    Falls back to a plain ``CREATE TABLE`` when:
+      - the table has no TEXT columns, or
+      - a column name collides with FTS5 reserved names (``rank``,
+        ``rowid``) or the table's own name.
+    """
     cols = table.columns
-    affinities = [_infer_sqlite_affinity(table.data[c]) for c in cols]
-    col_defs = ", ".join(f'"{c}" {a}' for c, a in zip(cols, affinities))
-    conn.execute(f'CREATE TABLE "{name}" ({col_defs})')
+    text_cols = {c for c in cols if _infer_sqlite_affinity(table.data[c]) == "TEXT"}
+    lower_names = {c.lower() for c in cols}
+    reserved_collision = bool(lower_names & _FTS5_RESERVED_COLUMN_NAMES)
+    name_collision = name.lower() in lower_names
+
+    if text_cols and not reserved_collision and not name_collision:
+        col_defs_parts = [
+            f'"{c}"' if c in text_cols else f'"{c}" UNINDEXED' for c in cols
+        ]
+        col_defs = ", ".join(col_defs_parts)
+        conn.execute(
+            f'CREATE VIRTUAL TABLE "{name}" USING fts5('
+            f"{col_defs}, tokenize='porter unicode61')"
+        )
+    else:
+        affinities = [_infer_sqlite_affinity(table.data[c]) for c in cols]
+        col_defs = ", ".join(f'"{c}" {a}' for c, a in zip(cols, affinities))
+        conn.execute(f'CREATE TABLE "{name}" ({col_defs})')
+
     if len(table) > 0:
         placeholders = ", ".join("?" for _ in cols)
+        col_list = ", ".join(f'"{c}"' for c in cols)
         conn.executemany(
-            f'INSERT INTO "{name}" VALUES ({placeholders})',
+            f'INSERT INTO "{name}" ({col_list}) VALUES ({placeholders})',
             table.rows(),
         )
 
@@ -410,7 +507,6 @@ def _to_timestamp(value: float | int | str | None) -> str | None:
     """
     if value is None:
         return None
-    from datetime import datetime, timezone
 
     if isinstance(value, str):
         # Already a string timestamp — return as-is if it looks like a date
@@ -437,7 +533,6 @@ def _to_date(value: float | int | str | None) -> str | None:
     """
     if value is None:
         return None
-    from datetime import datetime, timezone
 
     if isinstance(value, str):
         stripped = value.strip()
@@ -600,7 +695,7 @@ class DataFrameStore:
         self._tables[name] = (table, time.time())
 
         preview_table = table.head(5)
-        preview_csv = preview_table.write_csv()
+        preview_csv = preview_table.write_csv(max_cell_chars=PREVIEW_MAX_CELL_CHARS)
 
         return StoreSummary(
             table_name=name,
@@ -609,16 +704,19 @@ class DataFrameStore:
             preview=preview_csv,
         )
 
-    def query(self, sql: str) -> str:
+    def query(self, sql: str, max_cell_chars: int = 0) -> str:
         """Execute a SQL SELECT query across all stored tables.
 
         Args:
             sql: SQL query string.
+            max_cell_chars: If > 0, truncate output cells whose string
+                form exceeds this length with a visible marker.  0
+                (default) leaves cells untouched.
 
         Returns:
             CSV string of the query result.
         """
-        return self._execute_sql(sql).write_csv()
+        return self._execute_sql(sql).write_csv(max_cell_chars=max_cell_chars)
 
     def show_tables(self) -> str:
         """List all stored tables with metadata."""
@@ -725,7 +823,7 @@ class DataFrameStore:
         self._tables[name] = (table, time.time())
 
         preview_table = table.head(5)
-        preview_csv = preview_table.write_csv()
+        preview_csv = preview_table.write_csv(max_cell_chars=PREVIEW_MAX_CELL_CHARS)
 
         return StoreSummary(
             table_name=name,
