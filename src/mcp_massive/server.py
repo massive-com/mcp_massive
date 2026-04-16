@@ -227,7 +227,7 @@ async def search_endpoints(
         ),
     ] = None,
 ) -> str:
-    """Search for API endpoints and built-in finance functions by natural language query. Use this FIRST to find the right endpoint before calling call_api. Covers stocks, options, forex, crypto, futures, indices, ETFs, and economic data. Use detail="more" to see query parameter docs needed for building call_api requests."""
+    """Search for market data API endpoints and built-in finance functions by natural language query. Use this FIRST to find the right endpoint before calling call_api. Covers stocks, options, forex, crypto, futures, indices, ETFs, and economic data. Use detail="more" to see query parameter docs needed for building call_api requests."""
     effective_detail = detail or "default"
 
     lines = []
