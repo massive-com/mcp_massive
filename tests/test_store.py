@@ -2693,6 +2693,128 @@ class TestSQLiteDefenseInDepth:
         assert result["rn"] == [1, 2]
 
 
+class TestCustomTimestampFunctions:
+    """Tests for to_timestamp() and to_date() SQL functions."""
+
+    def _make_store(self):
+        s = DataFrameStore()
+        s.store(
+            "data",
+            [
+                {"t_ms": 1710460800000, "t_ns": 1710460800000000000, "t_s": 1710460800},
+                {"t_ms": 1710374400000, "t_ns": 1710374400000000000, "t_s": 1710374400},
+            ],
+        )
+        return s
+
+    def test_to_timestamp_epoch_ms(self):
+        s = self._make_store()
+        result = s.query("SELECT to_timestamp(t_ms) as ts FROM data LIMIT 1")
+        assert "2024-03-15T00:00:00Z" in result
+
+    def test_to_timestamp_epoch_ns(self):
+        s = self._make_store()
+        result = s.query("SELECT to_timestamp(t_ns) as ts FROM data LIMIT 1")
+        assert "2024-03-15" in result
+
+    def test_to_timestamp_epoch_seconds(self):
+        s = self._make_store()
+        result = s.query("SELECT to_timestamp(t_s) as ts FROM data LIMIT 1")
+        assert "2024-03-15T00:00:00Z" in result
+
+    def test_to_timestamp_null(self):
+        s = DataFrameStore()
+        s.store("nulls", [{"t": None}])
+        result = s.query("SELECT to_timestamp(t) as ts FROM nulls")
+        assert "ts" in result  # header exists
+        lines = result.strip().split("\n")
+        assert len(lines) == 2  # header + 1 row
+
+    def test_to_date_epoch_ms(self):
+        s = self._make_store()
+        result = s.query("SELECT to_date(t_ms) as d FROM data LIMIT 1")
+        assert "2024-03-15" in result
+
+    def test_to_date_epoch_ns(self):
+        s = self._make_store()
+        result = s.query("SELECT to_date(t_ns) as d FROM data LIMIT 1")
+        assert "2024-03-15" in result
+
+    def test_to_date_cross_asset_join(self):
+        """to_date() enables JOINs across assets with different timestamp offsets."""
+        s = DataFrameStore()
+        # Crypto midnight UTC vs equity 4am ET (4-hour offset)
+        s.store("btc", [{"t": 1710460800000, "close": 71250.0}])
+        s.store("spy", [{"t": 1710475200000, "close": 512.5}])
+
+        # Raw JOIN fails
+        raw = s.query("SELECT * FROM btc JOIN spy ON btc.t = spy.t")
+        raw_rows = raw.strip().split("\n")
+        assert len(raw_rows) <= 2  # header only or header + 0 rows
+
+        # to_date JOIN succeeds
+        result = s.query(
+            "SELECT to_date(btc.t) as d, btc.close as btc, spy.close as spy "
+            "FROM btc JOIN spy ON to_date(btc.t) = to_date(spy.t)"
+        )
+        assert "71250" in result
+        assert "512.5" in result
+
+    def test_to_date_iso_string_passthrough(self):
+        s = DataFrameStore()
+        s.store("opts", [{"expiry": "2026-04-17T00:00:00Z", "strike": 260}])
+        result = s.query("SELECT to_date(expiry) as d, strike FROM opts")
+        assert "2026-04-17" in result
+
+
+class TestCorrAggregate:
+    """Tests for the CORR() SQL aggregate function."""
+
+    def test_perfect_positive_correlation(self):
+        s = DataFrameStore()
+        s.store("data", [{"x": i, "y": i * 2} for i in range(10)])
+        result = s.query("SELECT CORR(x, y) as c FROM data")
+        assert "1.0" in result
+
+    def test_perfect_negative_correlation(self):
+        s = DataFrameStore()
+        s.store("data", [{"x": i, "y": -i} for i in range(10)])
+        result = s.query("SELECT CORR(x, y) as c FROM data")
+        assert "-1.0" in result
+
+    def test_zero_correlation(self):
+        """Orthogonal data should produce near-zero correlation."""
+        s = DataFrameStore()
+        s.store("data", [
+            {"x": 1, "y": 0}, {"x": -1, "y": 0},
+            {"x": 0, "y": 1}, {"x": 0, "y": -1},
+        ])
+        result = s.query("SELECT CORR(x, y) as c FROM data")
+        val = float(result.strip().split("\n")[1])
+        assert abs(val) < 0.01
+
+    def test_corr_with_nulls(self):
+        """NULL pairs should be skipped."""
+        s = DataFrameStore()
+        s.store("data", [
+            {"x": 1, "y": 2}, {"x": None, "y": 5},
+            {"x": 3, "y": 6}, {"x": 4, "y": None},
+            {"x": 5, "y": 10},
+        ])
+        # Should only use the 3 complete pairs: (1,2), (3,6), (5,10)
+        result = s.query("SELECT CORR(x, y) as c FROM data")
+        val = float(result.strip().split("\n")[1])
+        assert val > 0.99  # strong positive
+
+    def test_corr_insufficient_data(self):
+        """Fewer than 2 complete pairs should return NULL."""
+        s = DataFrameStore()
+        s.store("data", [{"x": 1, "y": 2}])
+        result = s.query("SELECT CORR(x, y) as c FROM data")
+        lines = result.strip().split("\n")
+        assert lines[1].strip('"') == ""  # NULL
+
+
 class TestReservedTableNames:
     """Tests for _RESERVED_TABLE_NAMES blocking."""
 
