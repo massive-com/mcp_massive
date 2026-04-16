@@ -707,6 +707,101 @@ class TestResponseSizeLimit:
             )
         assert "Error" not in result or "too large" not in result
 
+    @pytest.mark.asyncio
+    async def test_oversized_response_with_store_as_still_stores(self):
+        """When store_as is set, large responses should be stored, not rejected."""
+        large_results = [{"t": i, "v": i * 10} for i in range(100)]
+        large_json = json.dumps({"results": large_results})
+        # Temporarily lower the limit so we don't need a truly huge payload
+        mock_response = MagicMock()
+        mock_response.text = large_json
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.headers = {"user-agent": ""}
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        test_store = DataFrameStore()
+        with (
+            patch("mcp_massive.server._get_http_client", return_value=mock_client),
+            patch("mcp_massive.server._get_api_key", return_value="test-key"),
+            patch("mcp_massive.server._get_store", return_value=test_store),
+            patch("mcp_massive.server.MAX_RESPONSE_SIZE_BYTES", 10),  # artificially low
+        ):
+            result = await call_api(
+                "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
+                store_as="prices",
+            )
+        assert "Stored 100 rows" in result
+        assert "Error" not in result
+
+    @pytest.mark.asyncio
+    async def test_oversized_response_without_store_as_suggests_store(self):
+        """Error message for oversized responses should suggest store_as."""
+        mock_response = MagicMock()
+        mock_response.text = "x" * (MAX_RESPONSE_SIZE_BYTES + 1)
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.headers = {"user-agent": ""}
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        with (
+            patch("mcp_massive.server._get_http_client", return_value=mock_client),
+            patch("mcp_massive.server._get_api_key", return_value="test-key"),
+        ):
+            result = await call_api(
+                "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
+            )
+        assert "store_as" in result
+
+
+class TestEmptyResponseWarning:
+    """Test that empty API responses produce helpful warnings."""
+
+    @pytest.mark.asyncio
+    async def test_empty_response_csv_warns(self):
+        mock_response = MagicMock()
+        mock_response.text = '{"results": []}'
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.headers = {"user-agent": ""}
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        with (
+            patch("mcp_massive.server._get_http_client", return_value=mock_client),
+            patch("mcp_massive.server._get_api_key", return_value="test-key"),
+        ):
+            result = await call_api(
+                "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
+            )
+        assert "Warning" in result
+        assert "0 records" in result
+
+    @pytest.mark.asyncio
+    async def test_empty_response_store_as_warns(self):
+        mock_response = MagicMock()
+        mock_response.text = '{"results": []}'
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.headers = {"user-agent": ""}
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        test_store = DataFrameStore()
+        with (
+            patch("mcp_massive.server._get_http_client", return_value=mock_client),
+            patch("mcp_massive.server._get_api_key", return_value="test-key"),
+            patch("mcp_massive.server._get_store", return_value=test_store),
+        ):
+            result = await call_api(
+                "/v2/aggs/ticker/AAPL/range/1/day/2024-01-01/2024-01-31",
+                store_as="prices",
+            )
+        assert "Warning" in result
+        assert "0 records" in result
+
 
 class TestErrorMarket:
     """Verify error messages include market prefixes for LLM self-correction."""
