@@ -85,12 +85,7 @@ def _to_fts5(terms: list[str]) -> str:
     phrase (e.g. ``bs_delta`` → ``"bs_delta"``).
     """
     # Deduplicate preserving insertion order
-    seen: set[str] = set()
-    unique: list[str] = []
-    for t in terms:
-        if t not in seen:
-            seen.add(t)
-            unique.append(t)
+    unique: list[str] = list(set(terms))
     if not unique:
         return ""
     parts: list[str] = []
