@@ -419,6 +419,47 @@ class TestQueryData:
             result = await query_data("SELECT * FROM nonexistent")
         assert "Error" in result
 
+    @pytest.mark.asyncio
+    async def test_default_cap_truncates_long_text(self):
+        """By default, cells over 2000 chars are truncated with a marker."""
+        test_store = DataFrameStore()
+        long_body = "supply chain risk " * 200  # ~3600 chars, >2000
+        test_store.store("risks", [{"category": "Supply", "body": long_body}])
+
+        with patch("mcp_massive.server._get_store", return_value=test_store):
+            result = await query_data("SELECT body FROM risks")
+        assert "[truncated:" in result
+        assert long_body not in result
+
+    @pytest.mark.asyncio
+    async def test_max_cell_chars_zero_returns_full_text(self):
+        """Setting max_cell_chars=0 disables truncation."""
+        test_store = DataFrameStore()
+        long_body = "supply chain risk " * 200
+        test_store.store("risks", [{"category": "Supply", "body": long_body}])
+
+        with patch("mcp_massive.server._get_store", return_value=test_store):
+            result = await query_data("SELECT body FROM risks", max_cell_chars=0)
+        assert "truncated" not in result
+        assert long_body in result
+
+    @pytest.mark.asyncio
+    async def test_snippet_pattern_stays_under_cap(self):
+        """The recommended snippet() pattern keeps cells short even on big text."""
+        test_store = DataFrameStore()
+        long_body = (
+            "Our reliance on single-source suppliers for lithium and nickel. " * 100
+        )
+        test_store.store("risks", [{"category": "Supply", "body": long_body}])
+
+        with patch("mcp_massive.server._get_store", return_value=test_store):
+            result = await query_data(
+                "SELECT category, snippet(risks, 1, '[', ']', '...', 10) AS snip "
+                "FROM risks WHERE risks MATCH 'lithium'"
+            )
+        assert "truncated" not in result
+        assert "[lithium]" in result
+
 
 class TestSearchEndpointsScope:
     @pytest.mark.asyncio

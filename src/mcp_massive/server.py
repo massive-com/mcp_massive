@@ -47,7 +47,7 @@ mass_mcp = FastMCP(
         "crypto prices, forex rates, or any securities/market information. "
         "Do NOT use web search for financial data — use these tools instead. "
         "Start with search_endpoints to discover the right API endpoint (use "
-        'detail="more" to see parameter docs), then '
+        'detail="more" or detail="verbose" to see parameter docs), then '
         "call_api to fetch the data. Use store_as + query_data for multi-step analysis. "
         "Covers: equities, options, ETFs, indices, FX, crypto — real-time and historical."
     ),
@@ -450,11 +450,36 @@ async def query_data(
             max_length=20,
         ),
     ] = None,
+    max_cell_chars: Annotated[
+        Optional[int],
+        Field(
+            description=(
+                "Truncate output cells whose string form exceeds this length, "
+                "appending a '[truncated: N more chars]' marker. Default 2000. "
+                "Set to 0 to disable (e.g. when fetching the full body of a "
+                "specific row). Long TEXT columns like SEC filing text can be "
+                "thousands of tokens each — prefer snippet()/highlight() in "
+                "the SELECT list when searching."
+            ),
+            default=2000,
+            ge=0,
+            le=1_000_000,
+        ),
+    ] = 2000,
 ) -> str:
-    """Run SQL queries on tables stored via call_api's store_as parameter. Special commands: SHOW TABLES, DESCRIBE <table>, DROP TABLE <table>. Tables auto-expire after 1 hour. Supports CTEs, window functions, JOINs, and ILIKE."""
+    """Run SQL queries on tables stored via call_api's store_as parameter. Special commands: SHOW TABLES, DESCRIBE <table>, DROP TABLE <table>. Tables auto-expire after 1 hour. Supports CTEs, window functions, JOINs, and ILIKE.
+
+    Full-text search: any stored table with TEXT columns is searchable directly via FTS5. Use `WHERE {table} MATCH 'query'` and ORDER BY rank (lower = better). Numeric columns preserve their types. For long TEXT fields (news body, 10-K risk factors, filings) prefer snippet()/highlight() in SELECT instead of the raw column — full paragraphs can be thousands of tokens each.
+
+    Recommended FTS pattern:
+      1. Find matches compactly: `SELECT rowid, category, bm25({t}) AS score, snippet({t}, 4, '[', ']', '...', 15) AS snip FROM {t} WHERE {t} MATCH 'supply chain OR supplier' ORDER BY rank`
+      2. Fetch the full body only for rows you need: call query_data again with `SELECT supporting_text FROM {t} WHERE rowid IN (2, 7)` and `max_cell_chars=0`.
+
+    Output cells over max_cell_chars (default 2000) are truncated with a visible marker; raise or set to 0 to disable."""
     s = _get_store()
     normalized = sql.strip()
     upper = normalized.upper()
+    cap = max_cell_chars if max_cell_chars is not None else 2000
 
     try:
         if upper == "SHOW TABLES":
@@ -475,9 +500,9 @@ async def query_data(
         if apply:
             tbl = s.query_table(normalized)
             enriched = apply_pipeline(tbl, apply)
-            return enriched.write_csv()
+            return enriched.write_csv(max_cell_chars=cap)
 
-        return s.query(normalized)
+        return s.query(normalized, max_cell_chars=cap)
     except Exception as e:
         return f"Error: {e}"
 

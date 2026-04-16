@@ -110,6 +110,45 @@ class TestTable:
         lines = result.strip().split("\n")
         assert len(lines) == 4  # header + 3 rows
 
+    def test_write_csv_truncation_disabled_by_default(self):
+        long_text = "x" * 5000
+        t = Table(["col"], {"col": [long_text]})
+        csv = t.write_csv()
+        assert long_text in csv
+        assert "truncated" not in csv
+
+    def test_write_csv_truncates_long_string_cells(self):
+        long_text = "abcdef" * 500  # 3000 chars
+        t = Table(["col"], {"col": [long_text]})
+        csv = t.write_csv(max_cell_chars=100)
+        assert "[truncated: 2900 more chars]" in csv
+        # First 100 chars of the original text are preserved verbatim
+        assert long_text[:100] in csv
+        # Full string is NOT present
+        assert long_text not in csv
+
+    def test_write_csv_preserves_short_cells_when_cap_set(self):
+        t = Table(["a", "b"], {"a": ["hi", "ok"], "b": [1, 2]})
+        csv = t.write_csv(max_cell_chars=100)
+        assert "truncated" not in csv
+        assert "hi" in csv and "ok" in csv
+
+    def test_write_csv_truncation_preserves_numeric_cells(self):
+        """Numeric cells below the cap are written identically with or without
+        the cap — the truncation path only kicks in for over-limit strings."""
+        t = Table(["a"], {"a": [42, 3.14, None, 1_000_000]})
+        assert t.write_csv() == t.write_csv(max_cell_chars=50)
+        assert "truncated" not in t.write_csv(max_cell_chars=50)
+
+    def test_write_csv_truncation_only_fires_over_limit(self):
+        t = Table(["col"], {"col": ["x" * 100, "y" * 101]})
+        csv = t.write_csv(max_cell_chars=100)
+        lines = csv.strip().split("\n")
+        # First row exactly 100 chars — not truncated
+        assert "truncated" not in lines[1]
+        # Second row 101 chars — truncated
+        assert "[truncated: 1 more chars]" in lines[2]
+
     def test_get_column_missing_raises(self):
         t = Table(["a"], {"a": [1]})
         with pytest.raises(ValueError, match="not found"):
@@ -277,6 +316,31 @@ class TestDataFrameStore:
         s.store("t", self._sample_records(3))
         summary = s.store("t", self._sample_records(7))
         assert summary.row_count == 7
+
+    def test_store_preview_caps_long_text_cells(self):
+        """Preview cells are capped at PREVIEW_MAX_CELL_CHARS (200) — the
+        preview conveys shape, not content.  Without a cap, storing 10-K
+        filing text would blow up the call_api response by tens of
+        thousands of tokens per request."""
+        s = DataFrameStore()
+        long_body = "supply chain risk " * 200  # ~3600 chars per row
+        summary = s.store(
+            "risks",
+            [{"category": "Supply", "body": long_body}],
+        )
+        assert "[truncated:" in summary.preview
+        assert long_body not in summary.preview
+        # But the stored table retains the full value
+        assert s.get_table("risks")["body"][0] == long_body
+
+    def test_store_table_preview_caps_long_text_cells(self):
+        """store_table must apply the same preview cap as store."""
+        s = DataFrameStore()
+        long_body = "x" * 3000
+        t = Table(["body"], {"body": [long_body]})
+        summary = s.store_table("t", t)
+        assert "[truncated:" in summary.preview
+        assert long_body not in summary.preview
 
     def test_store_invalid_name(self):
         s = DataFrameStore()
@@ -2902,6 +2966,134 @@ class TestReservedTableNames:
         s = DataFrameStore()
         summary = s.store(name, [{"x": 1}])
         assert summary.table_name == name
+
+
+class TestFullTextSearch:
+    """Tests for the single-table FTS5 backing of TEXT-containing stores."""
+
+    @staticmethod
+    def _risks_store() -> DataFrameStore:
+        s = DataFrameStore()
+        s.store(
+            "risks",
+            [
+                {
+                    "category": "Supply",
+                    "text": "Reliance on single-source suppliers for lithium and nickel.",
+                },
+                {
+                    "category": "Market",
+                    "text": "A drop in consumer demand could affect revenue.",
+                },
+                {
+                    "category": "Logistics",
+                    "text": "Semiconductor chip shortage impacts procurement and logistics.",
+                },
+            ],
+        )
+        return s
+
+    def test_match_and_bm25_on_base_table(self):
+        s = self._risks_store()
+        df = s.query_table(
+            "SELECT category, bm25(risks) AS score FROM risks "
+            "WHERE risks MATCH 'supplier OR chip OR logistics' "
+            "ORDER BY score"
+        )
+        assert set(df["category"]) == {"Supply", "Logistics"}
+
+    def test_order_by_rank_pseudo_column(self):
+        s = self._risks_store()
+        df = s.query_table(
+            "SELECT category FROM risks WHERE risks MATCH 'supplier OR chip' "
+            "ORDER BY rank"
+        )
+        assert set(df["category"]) == {"Supply", "Logistics"}
+
+    def test_snippet_on_indexed_column(self):
+        s = self._risks_store()
+        df = s.query_table(
+            "SELECT snippet(risks, 1, '[', ']', '...', 6) AS snip "
+            "FROM risks WHERE risks MATCH 'lithium'"
+        )
+        assert "[lithium]" in df["snip"][0]
+
+    def test_prefix_match(self):
+        s = self._risks_store()
+        df = s.query_table("SELECT category FROM risks WHERE risks MATCH 'supp*'")
+        assert df["category"] == ["Supply"]
+
+    def test_column_scoped_match(self):
+        s = self._risks_store()
+        df = s.query_table(
+            "SELECT category FROM risks WHERE risks MATCH '{text}: nickel'"
+        )
+        assert df["category"] == ["Supply"]
+
+    def test_non_match_filter_still_works(self):
+        s = self._risks_store()
+        df = s.query_table("SELECT category FROM risks WHERE category = 'Market'")
+        assert df["category"] == ["Market"]
+
+    def test_numeric_columns_preserve_type(self):
+        """UNINDEXED numeric columns must retain INTEGER/REAL affinity."""
+        s = DataFrameStore()
+        s.store(
+            "q",
+            [
+                {"ticker": "AAPL", "note": "hello", "volume": 100, "price": 150.25},
+                {"ticker": "MSFT", "note": "world", "volume": 2, "price": 300.5},
+                {"ticker": "GOOG", "note": "abc", "volume": 20, "price": 2700.0},
+            ],
+        )
+        df = s.query_table("SELECT ticker FROM q ORDER BY volume")
+        assert df["ticker"] == ["MSFT", "GOOG", "AAPL"]
+        df = s.query_table("SELECT SUM(volume) AS s, AVG(price) AS a FROM q")
+        assert df["s"][0] == 122
+        assert df["a"][0] == pytest.approx(1050.25)
+
+    def test_plain_table_when_no_text_columns(self):
+        """Tables with only numeric columns fall back to plain CREATE TABLE."""
+        s = DataFrameStore()
+        s.store("nums", [{"x": 1, "y": 2.5}, {"x": 3, "y": 4.5}])
+        df = s.query_table("SELECT SUM(x) AS s FROM nums")
+        assert df["s"][0] == 4
+        with pytest.raises((ValueError, Exception)):
+            s.query("SELECT * FROM nums WHERE nums MATCH 'x'")
+
+    def test_reserved_rank_column_falls_back_to_plain(self):
+        """A column named 'rank' collides with FTS5 — use plain table."""
+        s = DataFrameStore()
+        s.store("r", [{"rank": 1, "note": "hello"}, {"rank": 2, "note": "world"}])
+        df = s.query_table("SELECT SUM(rank) AS s FROM r")
+        assert df["s"][0] == 3
+        with pytest.raises((ValueError, Exception)):
+            s.query("SELECT * FROM r WHERE r MATCH 'hello'")
+
+    def test_reserved_rowid_column_falls_back_to_plain(self):
+        s = DataFrameStore()
+        s.store("r", [{"rowid": 5, "note": "hello"}])
+        df = s.query_table("SELECT note FROM r")
+        assert df["note"] == ["hello"]
+        with pytest.raises((ValueError, Exception)):
+            s.query("SELECT * FROM r WHERE r MATCH 'hello'")
+
+    def test_shadow_tables_not_queryable(self):
+        """FTS5 shadow tables (foo_data, foo_idx, ...) must not be readable."""
+        s = self._risks_store()
+        for shadow in ("risks_data", "risks_idx", "risks_config", "risks_docsize"):
+            with pytest.raises((ValueError, Exception)):
+                s.query(f"SELECT * FROM {shadow}")
+
+    def test_create_virtual_table_still_blocked(self):
+        s = self._risks_store()
+        with pytest.raises(ValueError):
+            s.query("CREATE VIRTUAL TABLE evil USING fts5(a)")
+
+    def test_pragma_still_blocked(self):
+        s = self._risks_store()
+        with pytest.raises(ValueError):
+            s.query("PRAGMA data_version")
 
 
 class TestQueryTimeout:
