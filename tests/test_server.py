@@ -25,7 +25,7 @@ def _make_test_index():
         Endpoint(
             title="Aggregates Bars",
             path="/v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}",
-            market="Market Data",
+            market="Stocks",
             description="Get aggregate bars for a stock",
             query_params=[
                 QueryParam(
@@ -40,7 +40,7 @@ def _make_test_index():
         Endpoint(
             title="Tickers",
             path="/v3/reference/tickers",
-            market="Reference Data",
+            market="Reference",
             description="Query all ticker symbols",
             query_params=[
                 QueryParam(
@@ -55,9 +55,16 @@ def _make_test_index():
         Endpoint(
             title="Last Trade",
             path="/v2/last/trade/{stocksTicker}",
-            market="Market Data",
+            market="Stocks",
             description="Get the most recent trade for a ticker",
             path_prefix="/v2/last/trade/",
+        ),
+        Endpoint(
+            title="Aggregates Bars Crypto",
+            path="/v2/aggs/ticker/{cryptoTicker}/range/{multiplier}/{timespan}/{from}/{to}",
+            market="Crypto",
+            description="Get aggregate bars for a crypto pair",
+            path_prefix="/v2/aggs/ticker/",
         ),
     ]
     return EndpointIndex(endpoints)
@@ -101,7 +108,7 @@ class TestSearchEndpoints:
     async def test_detail_default(self):
         result = await search_endpoints("aggregate bars")
         assert "Aggregates" in result
-        assert "Market Data" in result
+        assert "Stocks" in result
         assert "/v2/aggs/ticker/" in result
         assert "Query Parameters:" not in result
 
@@ -118,6 +125,12 @@ class TestSearchEndpoints:
         result = await search_endpoints("aggregate bars", detail="verbose")
         assert "Aggregates" in result
         assert "Query Parameters:" in result
+
+    @pytest.mark.asyncio
+    async def test_market_filter_excludes_other_markets(self):
+        result = await search_endpoints("aggregate bars", market="Crypto")
+        assert "[Crypto]" in result
+        assert "[Stocks]" not in result
 
 
 class TestCallApi:

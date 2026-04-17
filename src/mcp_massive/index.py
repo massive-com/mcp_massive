@@ -117,36 +117,99 @@ def _expand_query(query: str) -> str:
     return _to_fts5(terms)
 
 
+def _extract_attr_vocab(ep: "Endpoint") -> list[str]:
+    """Collect domain vocabulary from response-attribute names.
+
+    Query params are intentionally excluded — they're dominated by
+    generic filter operators (``ticker``, ``date``, ``limit``, ``sort``,
+    ``.gt``/``.gte`` variants) that are near-universal across endpoints
+    and add noise without distinguishing power.  Response-attribute
+    names are where the specific jargon lives: ``debt_to_equity``,
+    ``yield_10_year``, ``ask_price``, ``constituent_ticker`` — these
+    are the terms users actually type when they already know the domain.
+
+    Names stay in snake_case; FTS5's tokenizer splits on underscores
+    and punctuation so ``debt_to_equity`` indexes as three searchable
+    tokens.  The common ``results[].``/``results.`` prefix is stripped
+    so only the field name itself is indexed.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for ra in ep.response_attributes:
+        name = ra.name
+        for prefix in ("results[].", "results."):
+            if name.startswith(prefix):
+                name = name[len(prefix) :]
+                break
+        if name and name not in seen:
+            seen.add(name)
+            out.append(name)
+    return out
+
+
 class EndpointIndex:
-    """BM25-ranked endpoint search backed by SQLite FTS5.
+    """Hybrid endpoint search: ``market`` filter + BM25 FTS5 + soft boost.
 
-    Columns and their ``bm25()`` weights:
-        title (10.0), market (5.0), description (1.0), path_info (0.5)
+    Endpoints live in a single FTS5 virtual table.  ``market`` is an
+    *indexed* column (contributes to BM25 scoring) and also supports
+    ``WHERE market = ?`` for strict filtering when the caller passes
+    an explicit market.  ``market`` comes from the ``## Market``
+    headers in the docs — the one facet reliably derivable without a
+    hand-curated mapping.
 
-    FTS5's built-in porter tokenizer handles stemming at both index and
-    query time, so explicit stemming/stopword removal is unnecessary.
+    Indexed market is the primary mechanism that biases results toward
+    a relevant asset class: a query containing "stock" matches the
+    literal text "Stocks" in the market column of every Stocks-market
+    row, contributing a reliable per-endpoint BM25 signal.  On top of
+    that, when we detect a market keyword we also apply a multiplicative
+    :attr:`_MARKET_BOOST` so the shift is robust across small and large
+    corpora (the market column alone depends on token IDF, which
+    degrades when the same token appears on most rows).
+
+    Explicit ``market`` is a hard filter — only rows with that market
+    are considered, even if the result set is empty.  The CASE boost
+    is skipped in that case since all remaining rows already match.
+
+    Category-level disambiguation within a market is left to BM25 over
+    title/description/path_info/attrs plus the query-time
+    :data:`ALIASES` synonym expansion.  The ``attrs`` column holds
+    response-attribute field names — this is how jargon like
+    ``debt_to_equity``, ``yield_10_year``, or ``ask_price`` surfaces
+    the right endpoint without hand-curated aliases.
     """
 
-    # Column weights passed to bm25(): title, market, description, path_info
-    _WEIGHTS = "10.0, 5.0, 1.0, 0.5"
+    # Column weights for bm25() in declared column order:
+    # title, description, path_info, attrs, market.
+    _WEIGHTS = "10.0, 1.0, 0.5, 0.1, 5.0"
 
-    # Market boost: multiply score by this factor when query mentions a market.
+    # Over-fetch factor: fetch extra rows to compensate for deduplication.
+    # Many endpoints share titles across markets (e.g. "Unified Snapshot"
+    # appears 5 times).  We fetch more than top_k from FTS5 and then keep
+    # only the highest-scoring endpoint per title.
+    _DEDUP_FETCH_FACTOR = 4
+
+    # Soft boost multiplier for inferred-market rows.  SQLite's bm25()
+    # returns non-positive scores (lower = better), so multiplying by
+    # a value > 1 makes matching-market scores *more* negative — they
+    # rank higher, but a strong cross-market BM25 match can still win.
     _MARKET_BOOST = 2.0
 
     def __init__(self, endpoints: list[Endpoint]):
         self._endpoints = endpoints
 
-        # Build FTS5 index in an in-memory SQLite database
         self._conn = sqlite3.connect(":memory:", check_same_thread=False)
         self._conn.execute(
             "CREATE VIRTUAL TABLE ep_fts USING fts5("
-            "  title, market, description, path_info,"
+            "  title, description, path_info, attrs, market,"
             "  tokenize='porter'"
             ")"
         )
 
         for i, ep in enumerate(endpoints):
-            # path_info: camelCase param tokens + meaningful path segments
+            # path_info: camelCase param tokens + meaningful path segments.
+            # Carries path-derived category signals (e.g. "aggs", "trades",
+            # "snapshot") into BM25 so free-text queries against them rank
+            # the right endpoints without a hand-curated category table.
             path_parts: list[str] = []
             for param in re.findall(r"\{(\w+)\}", ep.path):
                 path_parts.extend(re.findall(r"[a-z]+", param))
@@ -160,9 +223,16 @@ class EndpointIndex:
                     path_parts.append(seg)
 
             self._conn.execute(
-                "INSERT INTO ep_fts(rowid, title, market, description, path_info) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (i, ep.title, ep.market, ep.description, " ".join(path_parts)),
+                "INSERT INTO ep_fts(rowid, title, description, "
+                "path_info, attrs, market) VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    i,
+                    ep.title,
+                    ep.description,
+                    " ".join(path_parts),
+                    " ".join(_extract_attr_vocab(ep)),
+                    ep.market,
+                ),
             )
 
         # Regex allowlist from path prefixes
@@ -170,13 +240,57 @@ class EndpointIndex:
             re.compile("^" + re.escape(ep.path_prefix)) for ep in endpoints
         ]
 
-    # Over-fetch factor: fetch extra rows to compensate for deduplication.
-    # Many endpoints share titles across markets (e.g. "Unified Snapshot"
-    # appears 5 times).  We fetch more than top_k from FTS5 and then keep
-    # only the highest-scoring endpoint per title.
-    _DEDUP_FETCH_FACTOR = 4
+    def _run_fts(
+        self,
+        fts_query: str,
+        limit: int,
+        market_filter: str | None = None,
+        boost_market: str | None = None,
+    ) -> list[int]:
+        """Execute an FTS MATCH.
 
-    def search(self, query: str, top_k: int = 7) -> list[Endpoint]:
+        ``market_filter`` restricts results via ``WHERE market = ?``
+        (used for the explicit-market parameter — strict).
+
+        ``boost_market`` multiplies the BM25 score by
+        :attr:`_MARKET_BOOST` for rows whose market equals it (used for
+        inferred market — soft preference).  Mutually useful only when
+        ``market_filter`` is ``None``.
+        """
+        # Build SQL and parameters in SQL left-to-right order so the
+        # positional ? placeholders line up with params correctly.
+        score_expr = f"bm25(ep_fts, {self._WEIGHTS})"
+        params: list = [fts_query]
+        where = "ep_fts MATCH ?"
+        if market_filter is not None:
+            where += " AND market = ?"
+            params.append(market_filter)
+        if boost_market is not None:
+            score_expr += " * CASE WHEN market = ? THEN ? ELSE 1.0 END"
+            params.extend([boost_market, self._MARKET_BOOST])
+        params.append(limit)
+        sql = f"SELECT rowid FROM ep_fts WHERE {where} ORDER BY {score_expr} LIMIT ?"
+        try:
+            cursor = self._conn.execute(sql, params)
+            return [row[0] for row in cursor.fetchall()]
+        except sqlite3.OperationalError:
+            return []
+
+    def search(
+        self,
+        query: str,
+        top_k: int = 7,
+        market: str | None = None,
+    ) -> list[Endpoint]:
+        """Hybrid endpoint search.
+
+        Explicit ``market`` is a hard filter — results are restricted
+        to rows matching it, even if the filtered set is empty.  When
+        ``market`` is ``None`` and one is inferred from the query, we
+        apply a multiplicative BM25 boost to matching-market rows via
+        a ``CASE`` expression; this shifts ranking without excluding
+        cross-market strong matches.
+        """
         if not self._endpoints:
             return []
 
@@ -184,33 +298,22 @@ class EndpointIndex:
         if not fts_query:
             return []
 
-        # bm25() returns negative scores (lower = better).  When a market
-        # keyword is detected we multiply matching-market scores by the boost
-        # factor, making them more negative (= ranked higher).  When no market
-        # is detected the CASE always evaluates to 1.0 (no-op).
-        detected_market = _detect_market(query) or ""
+        explicit_filter = market is not None
+        boost_market = None if explicit_filter else _detect_market(query)
 
         fetch_limit = min(top_k * self._DEDUP_FETCH_FACTOR, len(self._endpoints))
+        rowids = self._run_fts(
+            fts_query,
+            fetch_limit,
+            market_filter=market if explicit_filter else None,
+            boost_market=boost_market,
+        )
 
-        try:
-            cursor = self._conn.execute(
-                f"SELECT rowid FROM ep_fts "
-                f"WHERE ep_fts MATCH ? "
-                f"ORDER BY bm25(ep_fts, {self._WEIGHTS}) "
-                f"  * CASE WHEN market = ? THEN ? ELSE 1.0 END "
-                f"LIMIT ?",
-                (fts_query, detected_market, self._MARKET_BOOST, fetch_limit),
-            )
-            rows = cursor.fetchall()
-        except sqlite3.OperationalError:
-            return []
-
-        # Deduplicate: keep only the first (highest-scoring) endpoint per
-        # title.  This prevents cross-market duplicates like 5× "Unified
-        # Snapshot" from consuming all result slots.
+        # Deduplicate by title: keep only the first (highest-scoring) per
+        # title to prevent cross-market duplicates from filling result slots.
         seen_titles: set[str] = set()
         results: list[Endpoint] = []
-        for (rowid,) in rows:
+        for rowid in rowids:
             ep = self._endpoints[rowid]
             if ep.title in seen_titles:
                 continue

@@ -6,6 +6,8 @@ from urllib.parse import urlparse
 from mcp_massive.index import (
     Endpoint,
     EndpointIndex,
+    QueryParam,
+    ResponseAttribute,
     parse_llms_txt,
     parse_llms_full_txt,
     parse_endpoint_section,
@@ -703,8 +705,342 @@ class TestLlmsFullTxtE2E:
         # Basic search should return results
         results = idx.search("stock aggregate bars")
         assert len(results) > 0
-        assert any("aggregate" in ep.title.lower() for ep in results)
+        # Real endpoint titles use "Bars (OHLC)" naming.  Accept any
+        # aggregates-family marker.
+        assert any(
+            marker in ep.title.lower()
+            for ep in results
+            for marker in ("aggregate", "bars", "ohlc")
+        )
 
         # Market detection should work
         results = idx.search("crypto snapshot")
         assert len(results) > 0
+
+
+class TestMarketFilter:
+    def _endpoints(self):
+        return [
+            Endpoint(
+                title="SMA",
+                path="/v1/indicators/sma/{stocksTicker}",
+                market="Stocks",
+                description="Simple moving average for a stock ticker.",
+                path_prefix="/v1/indicators/sma/",
+            ),
+            Endpoint(
+                title="SMA",
+                path="/v1/indicators/sma/{cryptoTicker}",
+                market="Crypto",
+                description="Simple moving average for a crypto ticker.",
+                path_prefix="/v1/indicators/sma/",
+            ),
+            Endpoint(
+                title="Splits",
+                path="/stocks/v1/splits",
+                market="Stocks",
+                description="Stock split history.",
+                path_prefix="/stocks/v1/splits",
+            ),
+            Endpoint(
+                title="Unified Snapshot",
+                path="/v3/snapshot",
+                market="Stocks",
+                description="Unified snapshot across assets.",
+                path_prefix="/v3/snapshot",
+            ),
+        ]
+
+    def test_explicit_market_is_strict(self):
+        """Explicit market filter excludes all other-market rows."""
+        idx = EndpointIndex(self._endpoints())
+        results = idx.search("sma", market="Crypto")
+        assert all(ep.market == "Crypto" for ep in results)
+        assert results[0].title == "SMA"
+
+    def test_explicit_market_with_zero_matches_returns_empty(self):
+        """Strict mode: no fallback when explicit filter matches nothing."""
+        idx = EndpointIndex(self._endpoints())
+        results = idx.search("sma", market="Forex")
+        assert results == []
+
+    def test_inferred_market_prefers_matching_market(self):
+        """When market is inferred, the matching-market row ranks above
+        a same-titled row from a different market."""
+        idx = EndpointIndex(self._endpoints())
+        results = idx.search("crypto sma")
+        assert results[0].market == "Crypto"
+        assert results[0].title == "SMA"
+
+    def test_empty_endpoints_returns_empty(self):
+        """Regression guard: search over an empty index returns []."""
+        idx = EndpointIndex([])
+        assert idx.search("anything") == []
+        assert idx.search("anything", market="Crypto") == []
+
+    def test_empty_query_returns_empty(self):
+        """A query that tokenizes to nothing short-circuits before FTS."""
+        idx = EndpointIndex(self._endpoints())
+        assert idx.search("") == []
+        assert idx.search("!!!") == []  # only punctuation → no tokens
+
+
+class TestInferredMarketBoost:
+    """Inferred-market preference is a *soft* boost, not a filter:
+
+    1. The ``market`` column is indexed, so its literal value ("Stocks",
+       "Crypto", …) contributes to BM25 whenever the query contains a
+       matching token like "stock" or "crypto".
+    2. When a market is also *detected* from the query via
+       :func:`_detect_market`, we apply a multiplicative
+       :attr:`EndpointIndex._MARKET_BOOST` to all rows whose market
+       matches.
+
+    The combination shifts ranking toward the inferred market but does
+    not hide strong cross-market matches.
+    """
+
+    def _endpoints(self):
+        return [
+            Endpoint(
+                title="Aggregates Stocks",
+                path="/v2/aggs/ticker/{stocksTicker}",
+                market="Stocks",
+                description="Aggregate bars for a stock.",
+                path_prefix="/v2/aggs/ticker/",
+            ),
+            Endpoint(
+                title="Aggregates Crypto",
+                path="/v2/aggs/ticker/{cryptoTicker}",
+                market="Crypto",
+                description="Aggregate bars for crypto.",
+                path_prefix="/v2/aggs/ticker/",
+            ),
+        ]
+
+    def test_cross_market_rows_still_surface(self):
+        """A generic query without a market keyword returns rows from
+        multiple markets — the boost only kicks in when a market is
+        detected, so without one both Stocks and Crypto rows appear."""
+        idx = EndpointIndex(self._endpoints())
+        results = idx.search("aggregates", top_k=5)
+        markets = {ep.market for ep in results}
+        assert "Stocks" in markets
+        assert "Crypto" in markets
+
+    def test_explicit_filter_is_strict(self):
+        """Explicit market filters do NOT apply the boost; only matching
+        rows are returned even when other markets score higher."""
+        idx = EndpointIndex(self._endpoints())
+        results = idx.search("aggregates", market="Stocks", top_k=5)
+        assert all(ep.market == "Stocks" for ep in results)
+
+    def test_unknown_market_endpoint_still_findable(self):
+        """Endpoints whose market matches no detection keywords still
+        surface — we never exclude rows based on inferred market."""
+        endpoints = [
+            Endpoint(
+                title="Mystery Endpoint",
+                path="/some/new/path",
+                market="Partners",
+                description="A novel endpoint under a partner namespace.",
+                path_prefix="/some/new/path",
+            ),
+        ]
+        idx = EndpointIndex(endpoints)
+        results = idx.search("mystery")
+        assert len(results) == 1
+        assert results[0].title == "Mystery Endpoint"
+
+    def test_inferred_market_outranks_other_markets(self):
+        """When the query contains an inferred-market keyword, rows of
+        that market rank above other-market rows."""
+        endpoints = [
+            Endpoint(
+                title="Crypto Aggregates",
+                path="/v2/aggs/ticker/{cryptoTicker}",
+                market="Crypto",
+                description="Aggregate bars for crypto.",
+                path_prefix="/v2/aggs/ticker/",
+            ),
+            Endpoint(
+                title="Crypto Snapshot",
+                path="/v2/snapshot/crypto",
+                market="Crypto",
+                description="Crypto snapshot.",
+                path_prefix="/v2/snapshot/crypto",
+            ),
+            Endpoint(
+                title="Stocks Aggregates",
+                path="/v2/aggs/ticker/{stocksTicker}",
+                market="Stocks",
+                description="Aggregate bars for a stock.",
+                path_prefix="/v2/aggs/ticker/",
+            ),
+        ]
+        idx = EndpointIndex(endpoints)
+        results = idx.search("crypto", top_k=5)
+        crypto_ranks = [i for i, ep in enumerate(results) if ep.market == "Crypto"]
+        stocks_ranks = [i for i, ep in enumerate(results) if ep.market == "Stocks"]
+        assert crypto_ranks, "expected at least one Crypto result"
+        if stocks_ranks:
+            assert max(crypto_ranks) < min(stocks_ranks), (
+                "Crypto rows should all rank above Stocks rows under "
+                "inferred Crypto market: "
+                f"{[(ep.title, ep.market) for ep in results]}"
+            )
+
+    def test_cross_market_title_match_beats_inferred_boost(self):
+        """The boost must not be so large that a weak in-market match
+        outranks a strong cross-market title match.
+
+        Real-world case: "stock ratings" infers Stocks but the right
+        endpoint is Analyst Ratings under Partners — its title match
+        should outweigh the 2x boost any generic Stocks row gets.
+        """
+        endpoints = [
+            Endpoint(
+                title="Splits",
+                path="/stocks/v1/splits",
+                market="Stocks",
+                description="Stock split history.",
+                path_prefix="/stocks/v1/splits",
+            ),
+            Endpoint(
+                title="Trades",
+                path="/v3/trades/{stockTicker}",
+                market="Stocks",
+                description="Historical trades for a stock.",
+                path_prefix="/v3/trades/",
+            ),
+            Endpoint(
+                title="Analyst Ratings",
+                path="/benzinga/v1/ratings",
+                market="Partners",
+                description="Historical analyst ratings and price targets.",
+                path_prefix="/benzinga/v1/ratings",
+            ),
+        ]
+        idx = EndpointIndex(endpoints)
+        results = idx.search("stock ratings", top_k=3)
+        # Partners-market Analyst Ratings should win despite the
+        # inferred-Stocks boost applied to the other two rows.
+        assert results[0].title == "Analyst Ratings"
+        assert results[0].market == "Partners"
+
+
+class TestAttrsColumn:
+    """The ``attrs`` FTS column indexes response-attribute field names
+    (e.g. ``debt_to_equity``, ``yield_10_year``) so queries for those
+    jargon terms surface the right endpoint without hand-curated
+    aliases.  Attrs is weighted well below title/description so it
+    only influences ranking for otherwise-weak matches.
+    """
+
+    def test_response_attr_names_are_indexed(self):
+        """A query matching only a response-attribute field name still
+        finds the endpoint that owns that field."""
+        endpoints = [
+            Endpoint(
+                title="Ratios",
+                path="/stocks/financials/v1/ratios",
+                market="Stocks",
+                description="Key financial ratios for a company.",
+                response_attributes=[
+                    ResponseAttribute(
+                        name="results[].debt_to_equity",
+                        type="number",
+                        description="Debt-to-equity ratio.",
+                    ),
+                    ResponseAttribute(
+                        name="results[].return_on_equity",
+                        type="number",
+                        description="Return on equity.",
+                    ),
+                ],
+                path_prefix="/stocks/financials/v1/ratios",
+            ),
+            Endpoint(
+                title="Last Trade",
+                path="/v2/last/trade/{stocksTicker}",
+                market="Stocks",
+                description="Most recent stock trade.",
+                path_prefix="/v2/last/trade/",
+            ),
+        ]
+        idx = EndpointIndex(endpoints)
+        # "debt_to_equity" appears only in the Ratios endpoint's
+        # response attrs — it should rank Ratios first.
+        results = idx.search("debt to equity", top_k=2)
+        assert results[0].title == "Ratios"
+
+    def test_results_prefix_stripped_from_attrs(self):
+        """The common ``results[].`` / ``results.`` wrapper is stripped
+        so searches don't need to include it."""
+        endpoints = [
+            Endpoint(
+                title="Treasury Yields",
+                path="/fed/v1/treasury-yields",
+                market="Economy",
+                description="U.S. Treasury yield data.",
+                response_attributes=[
+                    ResponseAttribute(
+                        name="results[].yield_10_year",
+                        type="number",
+                        description="",
+                    ),
+                    ResponseAttribute(
+                        name="results[].yield_2_year",
+                        type="number",
+                        description="",
+                    ),
+                ],
+                path_prefix="/fed/v1/treasury-yields",
+            ),
+        ]
+        idx = EndpointIndex(endpoints)
+        # Plain "yield" should find this endpoint via the stripped attrs.
+        results = idx.search("10 year yield")
+        assert results and results[0].title == "Treasury Yields"
+
+    def test_query_params_not_indexed_in_attrs(self):
+        """Query params are NOT added to ``attrs`` — they're dominated
+        by generic filter operators (``ticker``, ``date``, ``limit``,
+        ``sort``) that appear on nearly every endpoint."""
+        endpoints = [
+            Endpoint(
+                title="Trades",
+                path="/v3/trades/{ticker}",
+                market="Stocks",
+                description="Historical trades.",
+                query_params=[
+                    QueryParam(
+                        name="limit",
+                        type="integer",
+                        required=False,
+                        description="",
+                    ),
+                ],
+                path_prefix="/v3/trades/",
+            ),
+            Endpoint(
+                title="Quotes",
+                path="/v3/quotes/{ticker}",
+                market="Stocks",
+                description="Historical quotes.",
+                query_params=[
+                    QueryParam(
+                        name="limit",
+                        type="integer",
+                        required=False,
+                        description="",
+                    ),
+                ],
+                path_prefix="/v3/quotes/",
+            ),
+        ]
+        idx = EndpointIndex(endpoints)
+        # If "limit" were in attrs, this query would match both
+        # endpoints via the attrs column.  We expect no matches.
+        results = idx.search("limit")
+        assert results == []
