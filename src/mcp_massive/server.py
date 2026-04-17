@@ -226,8 +226,29 @@ async def search_endpoints(
             ),
         ),
     ] = None,
+    market: Annotated[
+        Optional[
+            Literal[
+                "Stocks",
+                "Options",
+                "Crypto",
+                "Forex",
+                "Futures",
+                "Indices",
+                "Economy",
+                "Alternative",
+                "Reference",
+            ]
+        ],
+        Field(
+            description=(
+                "Optional market/asset class filter. Omit to infer from the query. "
+                "Use to pin results to a specific asset class when you already know it."
+            ),
+        ),
+    ] = None,
 ) -> str:
-    """Search for market data API endpoints and built-in finance functions by natural language query. Use this FIRST to find the right endpoint before calling call_api. Covers stocks, options, forex, crypto, futures, indices, ETFs, and economic data. Use detail="more" to see query parameter docs needed for building call_api requests."""
+    """Search for market data API endpoints and built-in finance functions by natural language query. Use this FIRST to find the right endpoint before calling call_api. Covers stocks, options, forex, crypto, futures, indices, ETFs, and economic data. Pass market to pin results to a specific asset class when you already know it; omit it and the server will infer from the query. Use detail="more" to see query parameter docs needed for building call_api requests."""
     effective_detail = detail or "default"
 
     lines = []
@@ -240,7 +261,7 @@ async def search_endpoints(
         idx = await _get_index()
         default_k = 7 if scope == "endpoints" else 5
         top_k = max_results if max_results is not None else default_k
-        results = idx.search(query, top_k=top_k)
+        results = idx.search(query, top_k=top_k, market=market)
         for ep in results:
             lines.append(ep.format(effective_detail, counter))
             counter += 1

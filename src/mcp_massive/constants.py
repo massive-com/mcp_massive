@@ -8,9 +8,13 @@ _TOKEN_RE = re.compile(r"[a-z0-9]+")
 # in the llms.txt endpoint names/descriptions.
 # Values can be a single string or a list of strings for ambiguous terms.
 ALIASES: dict[str, str | list[str]] = {
-    # aggregates / bars / OHLC
+    # aggregates / bars / OHLC.  Custom Bars titles don't literally
+    # contain "aggregate", so we cross-expand "aggregate(s)" to "bars"
+    # and "ohlc" so queries for "aggregates" still surface them.
     "agg": ["aggregate", "bars", "ohlc"],
     "aggs": ["aggregate", "bars", "ohlc"],
+    "aggregate": ["bars", "ohlc"],
+    "aggregates": ["bars", "ohlc"],
     "candle": ["aggregate", "bars", "ohlc"],
     "candles": ["aggregate", "bars", "ohlc"],
     "candlestick": ["aggregate", "bars", "ohlc"],
@@ -102,7 +106,15 @@ ALIASES: dict[str, str | list[str]] = {
     # filings
     "10k": "filings",
     "sec": "filings",
+    "edgar": "filings",
     "filing": "filings",
+    # ratios (financial)
+    "roe": "ratios",
+    "roa": "ratios",
+    "roic": "ratios",
+    # alternative / consumer spending
+    "mcc": "merchant",
+    "merchants": "merchant",
     # etf
     "etf": "etf",
     # float
@@ -110,6 +122,12 @@ ALIASES: dict[str, str | list[str]] = {
     # labor / employment
     "unemployment": "labor",
     "jobs": "labor",
+    "nonfarm": "labor",
+    "payroll": "labor",
+    "payrolls": "labor",
+    "jobless": "labor",
+    "claims": "labor",
+    "employment": "labor",
     # conversion
     "convert": "conversion",
     # indices
@@ -143,6 +161,7 @@ ALIASES: dict[str, str | list[str]] = {
     "bond": "treasury",
     "bonds": "treasury",
     "cpi": "inflation",
+    "breakeven": "inflation",
     "rate": "treasury",
     "rates": "treasury",
     # market status
@@ -153,14 +172,28 @@ ALIASES: dict[str, str | list[str]] = {
     "exchange": "exchanges",
 }
 
-# Market keywords used to boost endpoints whose market matches the query.
+# Market keywords used to infer the market filter from a free-text query.
+# Only include tokens whose sole/primary meaning is the asset class —
+# polysemous words (e.g. "index") pull the filter onto wrong endpoints.
 _MARKET_KEYWORDS: dict[str, set[str]] = {
     "Stocks": {"stock", "stocks", "equity", "equities", "share", "shares"},
     "Crypto": {"crypto", "cryptocurrency", "bitcoin", "btc", "eth", "coin"},
     "Forex": {"forex", "fx", "currency", "currencies"},
     "Options": {"option", "options", "call", "put", "strike", "chain"},
-    "Futures": {"future", "futures", "futs"},
-    "Indices": {"index", "indices", "benchmark"},
+    "Futures": {
+        "future", "futures", "futs",
+        "commodity", "commodities",
+        "crude", "oil", "gold", "silver", "gas", "wheat", "corn",
+        "cme", "nymex", "cbot",
+    },
+    # NOTE: "index" deliberately omitted — collides with "consumer price
+    # index", "SEC EDGAR index", "filings index", etc. where the user
+    # means a table/document.  Users who mean the asset class typically
+    # say "indices", "benchmark", or a specific index symbol.
+    "Indices": {
+        "indices", "benchmark",
+        "spx", "djia", "dow", "nikkei", "ftse",
+    },
     "Economy": {"economy", "economic", "treasury", "inflation", "yield", "bond"},
 }
 
