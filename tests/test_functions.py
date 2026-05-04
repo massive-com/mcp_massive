@@ -447,6 +447,142 @@ class TestBlackScholesGreeks:
         assert volga > 0
         assert abs(volga - 0.0009850059106569621) < 1e-6
 
+    def test_bs_charm(self, bs_df):
+        result = apply_pipeline(
+            bs_df,
+            [
+                {
+                    "function": "bs_charm",
+                    "inputs": {
+                        "S": "S",
+                        "K": "K",
+                        "T": "T",
+                        "r": "r",
+                        "sigma": "sigma",
+                    },
+                    "output": "charm",
+                }
+            ],
+        )
+        charm = result["charm"][0]
+        # ATM call delta drifts down with time → charm < 0; ≈ -0.0001799/day
+        assert charm < 0
+        assert abs(charm - (-0.0001799097553711346)) < 1e-8
+
+    def test_bs_charm_otm(self):
+        # OTM call S=80, K=100, T=1, r=0.05, sigma=0.2.
+        # Charm magnitude is larger off-the-money; verify formula away from ATM.
+        df = _table(dummy=[1.0])
+        result = apply_pipeline(
+            df,
+            [
+                {
+                    "function": "bs_charm",
+                    "inputs": {
+                        "S": 80.0,
+                        "K": 100.0,
+                        "T": 1.0,
+                        "r": 0.05,
+                        "sigma": 0.2,
+                    },
+                    "output": "charm",
+                }
+            ],
+        )
+        charm = result["charm"][0]
+        assert charm < 0
+        assert abs(charm - (-0.0005974739640045683)) < 1e-8
+
+    def test_bs_veta(self, bs_df):
+        result = apply_pipeline(
+            bs_df,
+            [
+                {
+                    "function": "bs_veta",
+                    "inputs": {
+                        "S": "S",
+                        "K": "K",
+                        "T": "T",
+                        "r": "r",
+                        "sigma": "sigma",
+                    },
+                    "output": "veta",
+                }
+            ],
+        )
+        veta = result["veta"][0]
+        # Vega bleeds with time for ATM → veta < 0; ≈ -0.0004511 (Δbs_vega/day)
+        assert veta < 0
+        assert abs(veta - (-0.0004510594581090589)) < 1e-8
+
+    def test_bs_veta_otm(self):
+        df = _table(dummy=[1.0])
+        result = apply_pipeline(
+            df,
+            [
+                {
+                    "function": "bs_veta",
+                    "inputs": {
+                        "S": 80.0,
+                        "K": 100.0,
+                        "T": 1.0,
+                        "r": 0.05,
+                        "sigma": 0.2,
+                    },
+                    "output": "veta",
+                }
+            ],
+        )
+        veta = result["veta"][0]
+        assert veta < 0
+        assert abs(veta - (-0.000692103013452991)) < 1e-8
+
+    def test_bs_color(self, bs_df):
+        result = apply_pipeline(
+            bs_df,
+            [
+                {
+                    "function": "bs_color",
+                    "inputs": {
+                        "S": "S",
+                        "K": "K",
+                        "T": "T",
+                        "r": "r",
+                        "sigma": "sigma",
+                    },
+                    "output": "color",
+                }
+            ],
+        )
+        color = result["color"][0]
+        # ATM gamma builds with time → color > 0; ≈ +2.885e-5 (Δbs_gamma/day)
+        assert color > 0
+        assert abs(color - 2.884981434344266e-05) < 1e-9
+
+    def test_bs_color_sign_flip(self):
+        # color sign tracks ATM-ness: ATM gamma builds (color > 0) but OTM
+        # gamma decays (color < 0).  Catches sign errors the ATM case can't.
+        df = _table(dummy=[1.0])
+        result = apply_pipeline(
+            df,
+            [
+                {
+                    "function": "bs_color",
+                    "inputs": {
+                        "S": 80.0,
+                        "K": 100.0,
+                        "T": 1.0,
+                        "r": 0.05,
+                        "sigma": 0.2,
+                    },
+                    "output": "color",
+                }
+            ],
+        )
+        color = result["color"][0]
+        assert color < 0
+        assert abs(color - (-3.116504989883754e-06)) < 1e-9
+
     def test_invalid_option_type(self, bs_df):
         """Invalid option_type should raise ValueError."""
         with pytest.raises(ValueError, match="Invalid option_type"):
@@ -942,6 +1078,9 @@ class TestFunctionRegistry:
             "bs_rho",
             "bs_vanna",
             "bs_volga",
+            "bs_charm",
+            "bs_veta",
+            "bs_color",
             "simple_return",
             "log_return",
             "cumulative_return",

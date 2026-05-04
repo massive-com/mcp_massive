@@ -337,6 +337,68 @@ def _impl_bs_volga(table: Table, inputs: dict[str, Any]) -> np.ndarray:
     return volga / 10000.0
 
 
+# Calendar-time time-decay Greeks: ∂x/∂t (bleeds with passage of time).
+# Same sign convention as bs_theta — negative for the long-option holder
+# in the typical ATM case.  Assumes no dividends (q=0); under that
+# assumption charm/veta/color are identical for calls and puts.
+
+
+def _impl_bs_charm(table: Table, inputs: dict[str, Any]) -> np.ndarray:
+    n = len(table)
+    S = _to_numpy(inputs["S"], n)
+    K = _to_numpy(inputs["K"], n)
+    T = _to_numpy(inputs["T"], n)
+    r = _to_numpy(inputs["r"], n)
+    sigma = _to_numpy(inputs["sigma"], n)
+
+    d1, d2 = _bs_d1d2(S, K, T, r, sigma)
+    sqrt_T = np.sqrt(T)
+    charm = (
+        -_norm_pdf(d1) * (2 * r * T - d2 * sigma * sqrt_T) / (2 * T * sigma * sqrt_T)
+    )
+    # Per day (matches bs_theta /365 convention)
+    return charm / 365.0
+
+
+def _impl_bs_veta(table: Table, inputs: dict[str, Any]) -> np.ndarray:
+    n = len(table)
+    S = _to_numpy(inputs["S"], n)
+    K = _to_numpy(inputs["K"], n)
+    T = _to_numpy(inputs["T"], n)
+    r = _to_numpy(inputs["r"], n)
+    sigma = _to_numpy(inputs["sigma"], n)
+
+    d1, d2 = _bs_d1d2(S, K, T, r, sigma)
+    sqrt_T = np.sqrt(T)
+    veta = (
+        S
+        * _norm_pdf(d1)
+        * sqrt_T
+        * (r * d1 / (sigma * sqrt_T) - (1.0 + d1 * d2) / (2.0 * T))
+    )
+    # Per day, per 1% vol — change in bs_vega per day
+    return veta / 36500.0
+
+
+def _impl_bs_color(table: Table, inputs: dict[str, Any]) -> np.ndarray:
+    n = len(table)
+    S = _to_numpy(inputs["S"], n)
+    K = _to_numpy(inputs["K"], n)
+    T = _to_numpy(inputs["T"], n)
+    r = _to_numpy(inputs["r"], n)
+    sigma = _to_numpy(inputs["sigma"], n)
+
+    d1, d2 = _bs_d1d2(S, K, T, r, sigma)
+    sqrt_T = np.sqrt(T)
+    color = (
+        _norm_pdf(d1)
+        / (2.0 * S * T * sigma * sqrt_T)
+        * (1.0 + (2.0 * r * T - d2 * sigma * sqrt_T) * d1 / (sigma * sqrt_T))
+    )
+    # Per day — change in bs_gamma per day
+    return color / 365.0
+
+
 # ---------------------------------------------------------------------------
 # Returns implementations (numpy)
 # ---------------------------------------------------------------------------
@@ -576,7 +638,7 @@ _register(
     FunctionDef(
         name="bs_theta",
         category="Greeks",
-        description="Black-Scholes daily theta (annual theta / 365).",
+        description="Black-Scholes daily theta. Time decay — change in option price per day (annual theta / 365).",
         params=[*_BS_COMMON_PARAMS, _BS_OPTION_TYPE_PARAM],
         output_dtype="Float64",
         impl=_impl_bs_theta,
@@ -624,6 +686,39 @@ _register(
         params=list(_BS_COMMON_PARAMS),
         output_dtype="Float64",
         impl=_impl_bs_volga,
+    )
+)
+
+_register(
+    FunctionDef(
+        name="bs_charm",
+        category="Greeks",
+        description="Black-Scholes charm (delta decay). Change in bs_delta per day. Assumes no dividends; same for calls and puts under that assumption.",
+        params=list(_BS_COMMON_PARAMS),
+        output_dtype="Float64",
+        impl=_impl_bs_charm,
+    )
+)
+
+_register(
+    FunctionDef(
+        name="bs_veta",
+        category="Greeks",
+        description="Black-Scholes veta / DvegaDtime (vega decay). Change in bs_vega per day. Assumes no dividends; same for calls and puts under that assumption.",
+        params=list(_BS_COMMON_PARAMS),
+        output_dtype="Float64",
+        impl=_impl_bs_veta,
+    )
+)
+
+_register(
+    FunctionDef(
+        name="bs_color",
+        category="Greeks",
+        description="Black-Scholes color (gamma decay). Change in bs_gamma per day. Assumes no dividends; same for calls and puts under that assumption.",
+        params=list(_BS_COMMON_PARAMS),
+        output_dtype="Float64",
+        impl=_impl_bs_color,
     )
 )
 

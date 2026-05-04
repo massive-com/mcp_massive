@@ -93,6 +93,9 @@ ALIASES: dict[str, str | list[str]] = {
     "vanna": ["bs_vanna", "options"],
     "volga": ["bs_volga", "options"],
     "vomma": ["bs_volga", "options"],
+    "charm": ["bs_charm", "options"],
+    "veta": ["bs_veta", "options"],
+    "color": ["bs_color", "options"],
     "blackscholes": ["bs_price", "bs_delta"],
     # technical indicators
     "sma": "aggregate",

@@ -538,6 +538,21 @@ class TestFinanceAliases:
         q = _expand_query("vomma")
         assert "bs_volga" in q
 
+    def test_charm_alias(self):
+        q = _expand_query("charm")
+        assert "bs_charm" in q
+        assert "options" in q
+
+    def test_veta_alias(self):
+        q = _expand_query("veta")
+        assert "bs_veta" in q
+        assert "options" in q
+
+    def test_color_alias(self):
+        q = _expand_query("color")
+        assert "bs_color" in q
+        assert "options" in q
+
     def test_blackscholes_alias(self):
         q = _expand_query("blackscholes")
         assert "bs_price" in q
