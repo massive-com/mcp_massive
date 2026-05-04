@@ -235,6 +235,31 @@ class TestBlackScholesGreeks:
         assert 0.01 < gamma < 0.03
         assert abs(gamma - 0.018762017345846895) < 0.001
 
+    def test_bs_gamma_otm(self):
+        # OTM call S=80, K=100, T=1, r=0.05, sigma=0.2 → d1=-0.7657, d2=-0.9657.
+        # Gamma is always positive but the magnitude moves; verify the formula
+        # away from the at-the-money peak.
+        df = _table(dummy=[1.0])
+        result = apply_pipeline(
+            df,
+            [
+                {
+                    "function": "bs_gamma",
+                    "inputs": {
+                        "S": 80.0,
+                        "K": 100.0,
+                        "T": 1.0,
+                        "r": 0.05,
+                        "sigma": 0.2,
+                    },
+                    "output": "gamma",
+                }
+            ],
+        )
+        gamma = result["gamma"][0]
+        assert gamma > 0
+        assert abs(gamma - 0.018598225671687875) < 1e-6
+
     def test_bs_theta_call(self, bs_df):
         result = apply_pipeline(
             bs_df,
@@ -279,6 +304,31 @@ class TestBlackScholesGreeks:
         # Vega per 1% vol change ≈ 0.37524
         assert vega > 0
         assert abs(vega - 0.3752403469169379) < 0.01
+
+    def test_bs_vega_otm(self):
+        # OTM call S=80, K=100, T=1, r=0.05, sigma=0.2.
+        # Vega is always positive but smaller off the at-the-money peak;
+        # verify the formula at a non-ATM strike.
+        df = _table(dummy=[1.0])
+        result = apply_pipeline(
+            df,
+            [
+                {
+                    "function": "bs_vega",
+                    "inputs": {
+                        "S": 80.0,
+                        "K": 100.0,
+                        "T": 1.0,
+                        "r": 0.05,
+                        "sigma": 0.2,
+                    },
+                    "output": "vega",
+                }
+            ],
+        )
+        vega = result["vega"][0]
+        assert vega > 0
+        assert abs(vega - 0.23805728859760478) < 1e-6
 
     def test_bs_rho_call(self, bs_df):
         result = apply_pipeline(
@@ -325,6 +375,77 @@ class TestBlackScholesGreeks:
         # Put rho per 1% rate change ≈ -0.41890
         assert rho < 0
         assert abs(rho - (-0.4189046090469506)) < 0.01
+
+    def test_bs_vanna(self, bs_df):
+        result = apply_pipeline(
+            bs_df,
+            [
+                {
+                    "function": "bs_vanna",
+                    "inputs": {
+                        "S": "S",
+                        "K": "K",
+                        "T": "T",
+                        "r": "r",
+                        "sigma": "sigma",
+                    },
+                    "output": "vanna",
+                }
+            ],
+        )
+        vanna = result["vanna"][0]
+        # vanna_raw = -phi(d1) * d2 / sigma; per 1% vol → /100
+        # phi(0.35) ≈ 0.375240 → vanna_/100 ≈ -0.0028143
+        assert vanna < 0
+        assert abs(vanna - (-0.002814302601877034)) < 1e-5
+
+    def test_bs_vanna_sign_flip(self):
+        # vanna sign tracks -d2.  At ATM (d2 > 0) vanna is negative; at OTM
+        # call S=80, K=100 (d2 = -0.9657 < 0) it flips positive.  This
+        # catches sign errors the at-the-money case can't.
+        df = _table(dummy=[1.0])
+        result = apply_pipeline(
+            df,
+            [
+                {
+                    "function": "bs_vanna",
+                    "inputs": {
+                        "S": 80.0,
+                        "K": 100.0,
+                        "T": 1.0,
+                        "r": 0.05,
+                        "sigma": 0.2,
+                    },
+                    "output": "vanna",
+                }
+            ],
+        )
+        vanna = result["vanna"][0]
+        assert vanna > 0
+        assert abs(vanna - 0.014368509417491595) < 1e-5
+
+    def test_bs_volga(self, bs_df):
+        result = apply_pipeline(
+            bs_df,
+            [
+                {
+                    "function": "bs_volga",
+                    "inputs": {
+                        "S": "S",
+                        "K": "K",
+                        "T": "T",
+                        "r": "r",
+                        "sigma": "sigma",
+                    },
+                    "output": "volga",
+                }
+            ],
+        )
+        volga = result["volga"][0]
+        # volga_raw = vega_raw * d1 * d2 / sigma; per (1% vol)^2 → /10000
+        # ATM-ish but d1·d2 > 0 so volga > 0; ≈ 0.0009850
+        assert volga > 0
+        assert abs(volga - 0.0009850059106569621) < 1e-6
 
     def test_invalid_option_type(self, bs_df):
         """Invalid option_type should raise ValueError."""
@@ -819,6 +940,8 @@ class TestFunctionRegistry:
             "bs_theta",
             "bs_vega",
             "bs_rho",
+            "bs_vanna",
+            "bs_volga",
             "simple_return",
             "log_return",
             "cumulative_return",

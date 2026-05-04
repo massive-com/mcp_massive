@@ -308,6 +308,35 @@ def _impl_bs_rho(table: Table, inputs: dict[str, Any]) -> np.ndarray:
     return rho / 100.0
 
 
+def _impl_bs_vanna(table: Table, inputs: dict[str, Any]) -> np.ndarray:
+    n = len(table)
+    S = _to_numpy(inputs["S"], n)
+    K = _to_numpy(inputs["K"], n)
+    T = _to_numpy(inputs["T"], n)
+    r = _to_numpy(inputs["r"], n)
+    sigma = _to_numpy(inputs["sigma"], n)
+
+    d1, d2 = _bs_d1d2(S, K, T, r, sigma)
+    vanna = -_norm_pdf(d1) * d2 / sigma
+    # Per 1% change in volatility (matches bs_vega scaling)
+    return vanna / 100.0
+
+
+def _impl_bs_volga(table: Table, inputs: dict[str, Any]) -> np.ndarray:
+    n = len(table)
+    S = _to_numpy(inputs["S"], n)
+    K = _to_numpy(inputs["K"], n)
+    T = _to_numpy(inputs["T"], n)
+    r = _to_numpy(inputs["r"], n)
+    sigma = _to_numpy(inputs["sigma"], n)
+
+    d1, d2 = _bs_d1d2(S, K, T, r, sigma)
+    vega = S * _norm_pdf(d1) * np.sqrt(T)
+    volga = vega * d1 * d2 / sigma
+    # Per (1% vol)^2 — change in bs_vega per 1% vol change
+    return volga / 10000.0
+
+
 # ---------------------------------------------------------------------------
 # Returns implementations (numpy)
 # ---------------------------------------------------------------------------
@@ -573,6 +602,28 @@ _register(
         params=[*_BS_COMMON_PARAMS, _BS_OPTION_TYPE_PARAM],
         output_dtype="Float64",
         impl=_impl_bs_rho,
+    )
+)
+
+_register(
+    FunctionDef(
+        name="bs_vanna",
+        category="Greeks",
+        description="Black-Scholes vanna (dDelta/dSigma = dVega/dSpot) per 1% change in volatility. Same for calls and puts.",
+        params=list(_BS_COMMON_PARAMS),
+        output_dtype="Float64",
+        impl=_impl_bs_vanna,
+    )
+)
+
+_register(
+    FunctionDef(
+        name="bs_volga",
+        category="Greeks",
+        description="Black-Scholes volga / vomma. Change in bs_vega per 1% volatility change. Same for calls and puts.",
+        params=list(_BS_COMMON_PARAMS),
+        output_dtype="Float64",
+        impl=_impl_bs_volga,
     )
 )
 

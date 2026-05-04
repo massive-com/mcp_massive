@@ -90,6 +90,9 @@ ALIASES: dict[str, str | list[str]] = {
     "theta": ["bs_theta", "options"],
     "vega": ["bs_vega", "options"],
     "rho": ["bs_rho", "options"],
+    "vanna": ["bs_vanna", "options"],
+    "volga": ["bs_volga", "options"],
+    "vomma": ["bs_volga", "options"],
     "blackscholes": ["bs_price", "bs_delta"],
     # technical indicators
     "sma": "aggregate",
@@ -181,18 +184,34 @@ _MARKET_KEYWORDS: dict[str, set[str]] = {
     "Forex": {"forex", "fx", "currency", "currencies"},
     "Options": {"option", "options", "call", "put", "strike", "chain"},
     "Futures": {
-        "future", "futures", "futs",
-        "commodity", "commodities",
-        "crude", "oil", "gold", "silver", "gas", "wheat", "corn",
-        "cme", "nymex", "cbot",
+        "future",
+        "futures",
+        "futs",
+        "commodity",
+        "commodities",
+        "crude",
+        "oil",
+        "gold",
+        "silver",
+        "gas",
+        "wheat",
+        "corn",
+        "cme",
+        "nymex",
+        "cbot",
     },
     # NOTE: "index" deliberately omitted — collides with "consumer price
     # index", "SEC EDGAR index", "filings index", etc. where the user
     # means a table/document.  Users who mean the asset class typically
     # say "indices", "benchmark", or a specific index symbol.
     "Indices": {
-        "indices", "benchmark",
-        "spx", "djia", "dow", "nikkei", "ftse",
+        "indices",
+        "benchmark",
+        "spx",
+        "djia",
+        "dow",
+        "nikkei",
+        "ftse",
     },
     "Economy": {"economy", "economic", "treasury", "inflation", "yield", "bond"},
 }

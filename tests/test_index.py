@@ -524,6 +524,20 @@ class TestFinanceAliases:
         q = _expand_query("rho")
         assert "bs_rho" in q
 
+    def test_vanna_alias(self):
+        q = _expand_query("vanna")
+        assert "bs_vanna" in q
+        assert "options" in q
+
+    def test_volga_alias(self):
+        q = _expand_query("volga")
+        assert "bs_volga" in q
+        assert "options" in q
+
+    def test_vomma_alias(self):
+        q = _expand_query("vomma")
+        assert "bs_volga" in q
+
     def test_blackscholes_alias(self):
         q = _expand_query("blackscholes")
         assert "bs_price" in q
