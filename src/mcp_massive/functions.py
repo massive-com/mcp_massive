@@ -205,18 +205,30 @@ def _bs_d1d2(
     return d1, d2
 
 
+def _bs_inputs(
+    inputs: dict[str, Any], n: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Resolve the five common BS params (S, K, T, r, sigma) to numpy arrays.
+
+    apply_pipeline guarantees these keys are present before the impl runs;
+    no defensive checks needed here.
+    """
+    return (
+        _to_numpy(inputs["S"], n),
+        _to_numpy(inputs["K"], n),
+        _to_numpy(inputs["T"], n),
+        _to_numpy(inputs["r"], n),
+        _to_numpy(inputs["sigma"], n),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Greeks implementations
 # ---------------------------------------------------------------------------
 
 
 def _impl_bs_price(table: Table, inputs: dict[str, Any]) -> np.ndarray:
-    n = len(table)
-    S = _to_numpy(inputs["S"], n)
-    K = _to_numpy(inputs["K"], n)
-    T = _to_numpy(inputs["T"], n)
-    r = _to_numpy(inputs["r"], n)
-    sigma = _to_numpy(inputs["sigma"], n)
+    S, K, T, r, sigma = _bs_inputs(inputs, len(table))
     option_type = _validate_option_type(inputs)
 
     d1, d2 = _bs_d1d2(S, K, T, r, sigma)
@@ -228,12 +240,7 @@ def _impl_bs_price(table: Table, inputs: dict[str, Any]) -> np.ndarray:
 
 
 def _impl_bs_delta(table: Table, inputs: dict[str, Any]) -> np.ndarray:
-    n = len(table)
-    S = _to_numpy(inputs["S"], n)
-    K = _to_numpy(inputs["K"], n)
-    T = _to_numpy(inputs["T"], n)
-    r = _to_numpy(inputs["r"], n)
-    sigma = _to_numpy(inputs["sigma"], n)
+    S, K, T, r, sigma = _bs_inputs(inputs, len(table))
     option_type = _validate_option_type(inputs)
 
     d1, _d2 = _bs_d1d2(S, K, T, r, sigma)
@@ -245,12 +252,7 @@ def _impl_bs_delta(table: Table, inputs: dict[str, Any]) -> np.ndarray:
 
 
 def _impl_bs_gamma(table: Table, inputs: dict[str, Any]) -> np.ndarray:
-    n = len(table)
-    S = _to_numpy(inputs["S"], n)
-    K = _to_numpy(inputs["K"], n)
-    T = _to_numpy(inputs["T"], n)
-    r = _to_numpy(inputs["r"], n)
-    sigma = _to_numpy(inputs["sigma"], n)
+    S, K, T, r, sigma = _bs_inputs(inputs, len(table))
 
     d1, _d2 = _bs_d1d2(S, K, T, r, sigma)
     gamma = _norm_pdf(d1) / (S * sigma * np.sqrt(T))
@@ -258,12 +260,7 @@ def _impl_bs_gamma(table: Table, inputs: dict[str, Any]) -> np.ndarray:
 
 
 def _impl_bs_theta(table: Table, inputs: dict[str, Any]) -> np.ndarray:
-    n = len(table)
-    S = _to_numpy(inputs["S"], n)
-    K = _to_numpy(inputs["K"], n)
-    T = _to_numpy(inputs["T"], n)
-    r = _to_numpy(inputs["r"], n)
-    sigma = _to_numpy(inputs["sigma"], n)
+    S, K, T, r, sigma = _bs_inputs(inputs, len(table))
     option_type = _validate_option_type(inputs)
 
     d1, d2 = _bs_d1d2(S, K, T, r, sigma)
@@ -277,12 +274,7 @@ def _impl_bs_theta(table: Table, inputs: dict[str, Any]) -> np.ndarray:
 
 
 def _impl_bs_vega(table: Table, inputs: dict[str, Any]) -> np.ndarray:
-    n = len(table)
-    S = _to_numpy(inputs["S"], n)
-    K = _to_numpy(inputs["K"], n)
-    T = _to_numpy(inputs["T"], n)
-    r = _to_numpy(inputs["r"], n)
-    sigma = _to_numpy(inputs["sigma"], n)
+    S, K, T, r, sigma = _bs_inputs(inputs, len(table))
 
     d1, _d2 = _bs_d1d2(S, K, T, r, sigma)
     vega = S * _norm_pdf(d1) * np.sqrt(T)
@@ -291,12 +283,7 @@ def _impl_bs_vega(table: Table, inputs: dict[str, Any]) -> np.ndarray:
 
 
 def _impl_bs_rho(table: Table, inputs: dict[str, Any]) -> np.ndarray:
-    n = len(table)
-    S = _to_numpy(inputs["S"], n)
-    K = _to_numpy(inputs["K"], n)
-    T = _to_numpy(inputs["T"], n)
-    r = _to_numpy(inputs["r"], n)
-    sigma = _to_numpy(inputs["sigma"], n)
+    S, K, T, r, sigma = _bs_inputs(inputs, len(table))
     option_type = _validate_option_type(inputs)
 
     _d1, d2 = _bs_d1d2(S, K, T, r, sigma)
@@ -309,12 +296,7 @@ def _impl_bs_rho(table: Table, inputs: dict[str, Any]) -> np.ndarray:
 
 
 def _impl_bs_vanna(table: Table, inputs: dict[str, Any]) -> np.ndarray:
-    n = len(table)
-    S = _to_numpy(inputs["S"], n)
-    K = _to_numpy(inputs["K"], n)
-    T = _to_numpy(inputs["T"], n)
-    r = _to_numpy(inputs["r"], n)
-    sigma = _to_numpy(inputs["sigma"], n)
+    S, K, T, r, sigma = _bs_inputs(inputs, len(table))
 
     d1, d2 = _bs_d1d2(S, K, T, r, sigma)
     vanna = -_norm_pdf(d1) * d2 / sigma
@@ -323,12 +305,7 @@ def _impl_bs_vanna(table: Table, inputs: dict[str, Any]) -> np.ndarray:
 
 
 def _impl_bs_volga(table: Table, inputs: dict[str, Any]) -> np.ndarray:
-    n = len(table)
-    S = _to_numpy(inputs["S"], n)
-    K = _to_numpy(inputs["K"], n)
-    T = _to_numpy(inputs["T"], n)
-    r = _to_numpy(inputs["r"], n)
-    sigma = _to_numpy(inputs["sigma"], n)
+    S, K, T, r, sigma = _bs_inputs(inputs, len(table))
 
     d1, d2 = _bs_d1d2(S, K, T, r, sigma)
     vega = S * _norm_pdf(d1) * np.sqrt(T)
@@ -344,12 +321,7 @@ def _impl_bs_volga(table: Table, inputs: dict[str, Any]) -> np.ndarray:
 
 
 def _impl_bs_charm(table: Table, inputs: dict[str, Any]) -> np.ndarray:
-    n = len(table)
-    S = _to_numpy(inputs["S"], n)
-    K = _to_numpy(inputs["K"], n)
-    T = _to_numpy(inputs["T"], n)
-    r = _to_numpy(inputs["r"], n)
-    sigma = _to_numpy(inputs["sigma"], n)
+    S, K, T, r, sigma = _bs_inputs(inputs, len(table))
 
     d1, d2 = _bs_d1d2(S, K, T, r, sigma)
     sqrt_T = np.sqrt(T)
@@ -361,12 +333,7 @@ def _impl_bs_charm(table: Table, inputs: dict[str, Any]) -> np.ndarray:
 
 
 def _impl_bs_veta(table: Table, inputs: dict[str, Any]) -> np.ndarray:
-    n = len(table)
-    S = _to_numpy(inputs["S"], n)
-    K = _to_numpy(inputs["K"], n)
-    T = _to_numpy(inputs["T"], n)
-    r = _to_numpy(inputs["r"], n)
-    sigma = _to_numpy(inputs["sigma"], n)
+    S, K, T, r, sigma = _bs_inputs(inputs, len(table))
 
     d1, d2 = _bs_d1d2(S, K, T, r, sigma)
     sqrt_T = np.sqrt(T)
@@ -381,12 +348,7 @@ def _impl_bs_veta(table: Table, inputs: dict[str, Any]) -> np.ndarray:
 
 
 def _impl_bs_color(table: Table, inputs: dict[str, Any]) -> np.ndarray:
-    n = len(table)
-    S = _to_numpy(inputs["S"], n)
-    K = _to_numpy(inputs["K"], n)
-    T = _to_numpy(inputs["T"], n)
-    r = _to_numpy(inputs["r"], n)
-    sigma = _to_numpy(inputs["sigma"], n)
+    S, K, T, r, sigma = _bs_inputs(inputs, len(table))
 
     d1, d2 = _bs_d1d2(S, K, T, r, sigma)
     sqrt_T = np.sqrt(T)
