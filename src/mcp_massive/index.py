@@ -15,6 +15,8 @@ from .constants import (
     _MARKET_KEYWORDS,
     _BULLET_PARAM_RE,
     _STRUCTURAL_SECTIONS,
+    _TICKER_FALLBACK_EXCLUSIONS,
+    _UPPER_TICKER_RE,
 )
 
 logger = logging.getLogger(__name__)
@@ -70,11 +72,25 @@ class Endpoint(BaseModel):
 
 
 def _detect_market(query: str) -> str | None:
-    """Detect asset-class market from query keywords. Returns market name or None."""
+    """Detect asset-class market from query keywords. Returns market name or None.
+
+    Two passes:
+    1. Lowercase keyword match against :data:`_MARKET_KEYWORDS` — handles
+       explicit asset-class words ("stock", "forex", "btc") and known
+       index/crypto symbols.
+    2. Uppercase ticker fallback: if the original-case query contains a
+       2-5 letter uppercase token that isn't a known acronym
+       (:data:`_TICKER_FALLBACK_EXCLUSIONS`), assume the user means a
+       stock/ETF ticker and infer Stocks.  This catches the very common
+       "<indicator> for <TICKER>" / "<verb> <TICKER>" patterns.
+    """
     query_words = set(_TOKEN_RE.findall(query.lower()))
     for market, keywords in _MARKET_KEYWORDS.items():
         if query_words & keywords:
             return market
+    upper_tokens = set(_UPPER_TICKER_RE.findall(query))
+    if upper_tokens - _TICKER_FALLBACK_EXCLUSIONS:
+        return "Stocks"
     return None
 
 
@@ -117,6 +133,24 @@ def _expand_query(query: str) -> str:
     return _to_fts5(terms)
 
 
+# Envelope-metadata response-attribute names that appear on nearly
+# every endpoint — indexing them in :data:`attrs` would tank IDF for
+# common query tokens like "status" (which we use as the alias target
+# for "is the market open").  Keep this set narrow: only fields that
+# are pure response-envelope metadata, never domain signal.
+_ATTR_VOCAB_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "status",
+        "request_id",
+        "results",
+        "next_url",
+        "count",
+        "queryCount",
+        "resultsCount",
+    }
+)
+
+
 def _extract_attr_vocab(ep: "Endpoint") -> list[str]:
     """Collect domain vocabulary from response-attribute names.
 
@@ -131,7 +165,9 @@ def _extract_attr_vocab(ep: "Endpoint") -> list[str]:
     Names stay in snake_case; FTS5's tokenizer splits on underscores
     and punctuation so ``debt_to_equity`` indexes as three searchable
     tokens.  The common ``results[].``/``results.`` prefix is stripped
-    so only the field name itself is indexed.
+    so only the field name itself is indexed.  Envelope-metadata names
+    in :data:`_ATTR_VOCAB_STOPWORDS` are skipped — they appear on
+    nearly every endpoint and would kill IDF for those tokens.
     """
     seen: set[str] = set()
     out: list[str] = []
@@ -141,7 +177,7 @@ def _extract_attr_vocab(ep: "Endpoint") -> list[str]:
             if name.startswith(prefix):
                 name = name[len(prefix) :]
                 break
-        if name and name not in seen:
+        if name and name not in seen and name not in _ATTR_VOCAB_STOPWORDS:
             seen.add(name)
             out.append(name)
     return out

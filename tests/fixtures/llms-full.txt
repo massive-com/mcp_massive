@@ -67,13 +67,13 @@ Use Cases: Consumer spending trend analysis, merchant revenue estimation, cross-
 | `results[].parent_name` | string | Merchant's parent business name (Title Case). Useful for aggregating transactions across subsidiary brands. Also available in the merchant-hierarchy endpoint for full corporate structure. |
 | `results[].published_date` | string | The date when this data version was published. For original data, this is approximately 7 days after transaction_date. |
 | `results[].spend_in_distinct_account_key_count` | integer | The count of distinct account keys (unique consumer accounts) with inbound transactions. |
-| `results[].spend_in_spend` | number | The total inbound transaction amount (refunds, returns) in the specified currency for this aggregation. |
+| `results[].spend_in_spend` | number | The total inbound transaction amount (refunds, returns, credits) in the specified currency for this aggregation. Values are positive, representing money flowing back into consumer accounts. |
 | `results[].spend_in_transaction_count` | integer | The count of inbound transactions (refunds, returns). |
 | `results[].spend_out_distinct_account_key_count` | integer | The count of distinct account keys (unique consumer accounts) with outbound transactions. |
-| `results[].spend_out_spend` | number | The total outbound transaction amount (money spent by consumers) in the specified currency for this aggregation. |
+| `results[].spend_out_spend` | number | The total outbound transaction amount (money spent by consumers) in the specified currency for this aggregation. Values are negative, representing money flowing out of consumer accounts. |
 | `results[].spend_out_transaction_count` | integer | The count of outbound transactions (purchases, payments). |
 | `results[].total_accounts` | integer | The total count of distinct consumer accounts with any transaction activity for this aggregation. |
-| `results[].total_spend` | number | Sum of spend_out_spend and spend_in_spend (net spending after refunds). |
+| `results[].total_spend` | number | Sum of spend_out_spend and spend_in_spend. Typically negative (net outflow). A positive value indicates refunds exceeded new spending for this aggregation. |
 | `results[].total_transactions` | integer | The total count of all transactions (outbound + inbound). |
 | `results[].transaction_currency` | string | ISO currency code for the transaction (base card/account currency). Always EUR or GBP in this dataset. All spend amounts are denominated in this currency. |
 | `results[].transaction_date` | string | The calendar date when the consumer transactions occurred. |
@@ -1103,27 +1103,17 @@ Use Cases: Cross-market analysis, diversified portfolio monitoring, global marke
 | `next_url` | string | If present, this value can be used to fetch the next page of data. |
 | `request_id` | string | A request id assigned by the server. |
 | `results` | array[object] | An array of results containing the requested data. |
-| `results[].break_even_price` | number | The price of the underlying asset for the contract to break even. For a call, this value is (strike price + premium paid). For a put, this value is (strike price - premium paid). |
-| `results[].details` | object | The details for this contract. |
 | `results[].error` | string | The error while looking for this ticker. |
 | `results[].fmv` | number | Fair Market Value is only available on Business plans. It is our proprietary algorithm to generate a real-time, accurate, fair market value of a tradable security. For more information, <a rel="nofollow" target="_blank" href="https://massive.com/contact">contact us</a>. |
 | `results[].fmv_last_updated` | integer | If Fair Market Value (FMV) is available, this field is the nanosecond timestamp of the last FMV calculation. |
-| `results[].greeks` | object | The greeks for this contract. There are certain circumstances where greeks will not be returned, such as options contracts that are deep in the money. See this <a href="https://massive.com/blog/greeks-and-implied-volatility/#testing" alt="link">article</a> for more information. |
-| `results[].implied_volatility` | number | The market's forecast for the volatility of the underlying asset, based on this option's current price. |
 | `results[].last_minute` | object | The most recent minute aggregate for this stock. |
-| `results[].last_quote` | object | The most recent quote for this contract. This is only returned if your current plan includes quotes. |
 | `results[].last_trade` | object | The most recent quote for this contract. This is only returned if your current plan includes trades. |
-| `results[].last_updated` | integer | The nanosecond timestamp of when this information was updated. |
 | `results[].market_status` | string | The market status for the market that trades this ticker. Possible values for stocks, options, crypto, and forex snapshots are open, closed, early_trading, or late_trading. Possible values for indices snapshots are regular_trading, closed, early_trading, and late_trading. |
 | `results[].message` | string | The error message while looking for this ticker. |
 | `results[].name` | string | The name of this contract. |
-| `results[].open_interest` | number | The quantity of this contract held at the end of the last trading day. |
 | `results[].session` | object | Comprehensive trading session metrics, detailing price changes, trading volume, and key price points (open, close, high, low) for the asset within the current trading day. Includes specific changes during early, regular, and late trading periods to enable detailed performance analysis and trend tracking. |
 | `results[].ticker` | string | The ticker symbol for the asset. |
-| `results[].timeframe` | enum: DELAYED, REAL-TIME | The time relevance of the data. |
 | `results[].type` | enum: stocks, options, fx, crypto, indices | The asset class for this ticker. |
-| `results[].underlying_asset` | object | Information on the underlying stock for this options contract.  The market data returned depends on your current stocks plan. |
-| `results[].value` | number | Value of Index. |
 | `status` | string | The status of this request's response. |
 
 ## Sample Response
@@ -1851,6 +1841,7 @@ Use Cases: Intraday analysis, algorithmic trading, market microstructure researc
 | `results[].id` | string | The Trade ID which uniquely identifies a trade on the exchange that the trade happened on. |
 | `results[].participant_timestamp` | integer | The nanosecond Exchange Unix Timestamp. This is the timestamp of when the trade was generated at the exchange. |
 | `results[].price` | number | The price of the trade in the base currency of the crypto pair. |
+| `results[].received_timestamp` | integer | The nanosecond accuracy timestamp of when the tick was received by Massive. |
 | `results[].size` | number | The size of a trade (also known as volume). |
 | `status` | string | The status of this request's response. |
 
@@ -1869,6 +1860,7 @@ Use Cases: Intraday analysis, algorithmic trading, market microstructure researc
       "id": "191450340",
       "participant_timestamp": 1625097600103000000,
       "price": 35060,
+      "received_timestamp": 1625097600125000000,
       "size": 1.0434526
     },
     {
@@ -1879,6 +1871,7 @@ Use Cases: Intraday analysis, algorithmic trading, market microstructure researc
       "id": "191450341",
       "participant_timestamp": 1625097600368000000,
       "price": 35059.99,
+      "received_timestamp": 1625097600390000000,
       "size": 0.0058883
     }
   ],
@@ -3033,27 +3026,17 @@ Use Cases: Cross-market analysis, diversified portfolio monitoring, global marke
 | `next_url` | string | If present, this value can be used to fetch the next page of data. |
 | `request_id` | string | A request id assigned by the server. |
 | `results` | array[object] | An array of results containing the requested data. |
-| `results[].break_even_price` | number | The price of the underlying asset for the contract to break even. For a call, this value is (strike price + premium paid). For a put, this value is (strike price - premium paid). |
-| `results[].details` | object | The details for this contract. |
 | `results[].error` | string | The error while looking for this ticker. |
 | `results[].fmv` | number | Fair Market Value is only available on Business plans. It is our proprietary algorithm to generate a real-time, accurate, fair market value of a tradable security. For more information, <a rel="nofollow" target="_blank" href="https://massive.com/contact">contact us</a>. |
 | `results[].fmv_last_updated` | integer | If Fair Market Value (FMV) is available, this field is the nanosecond timestamp of the last FMV calculation. |
-| `results[].greeks` | object | The greeks for this contract. There are certain circumstances where greeks will not be returned, such as options contracts that are deep in the money. See this <a href="https://massive.com/blog/greeks-and-implied-volatility/#testing" alt="link">article</a> for more information. |
-| `results[].implied_volatility` | number | The market's forecast for the volatility of the underlying asset, based on this option's current price. |
 | `results[].last_minute` | object | The most recent minute aggregate for this stock. |
 | `results[].last_quote` | object | The most recent quote for this contract. This is only returned if your current plan includes quotes. |
-| `results[].last_trade` | object | The most recent quote for this contract. This is only returned if your current plan includes trades. |
-| `results[].last_updated` | integer | The nanosecond timestamp of when this information was updated. |
 | `results[].market_status` | string | The market status for the market that trades this ticker. Possible values for stocks, options, crypto, and forex snapshots are open, closed, early_trading, or late_trading. Possible values for indices snapshots are regular_trading, closed, early_trading, and late_trading. |
 | `results[].message` | string | The error message while looking for this ticker. |
 | `results[].name` | string | The name of this contract. |
-| `results[].open_interest` | number | The quantity of this contract held at the end of the last trading day. |
 | `results[].session` | object | Comprehensive trading session metrics, detailing price changes, trading volume, and key price points (open, close, high, low) for the asset within the current trading day. Includes specific changes during early, regular, and late trading periods to enable detailed performance analysis and trend tracking. |
 | `results[].ticker` | string | The ticker symbol for the asset. |
-| `results[].timeframe` | enum: DELAYED, REAL-TIME | The time relevance of the data. |
 | `results[].type` | enum: stocks, options, fx, crypto, indices | The asset class for this ticker. |
-| `results[].underlying_asset` | object | Information on the underlying stock for this options contract.  The market data returned depends on your current stocks plan. |
-| `results[].value` | number | Value of Index. |
 | `status` | string | The status of this request's response. |
 
 ## Sample Response
@@ -4266,7 +4249,7 @@ Use Cases: Real-time trading systems, intraday market analysis, performance moni
 ```json
 {
   "count": 1,
-  "next_url": "https://api.massive.com/v1/futures/vX/snapshot?cursor=AQANAkNCBVNQ",
+  "next_url": "https://api.massive.com/futures/vX/snapshot?cursor=AQANAkNCBVNQ",
   "request_id": "c4d50f4801874e30b63e674b844cf51f",
   "results": [
     {
@@ -4374,28 +4357,31 @@ Use Cases: Liquidity analysis, price discovery, trading strategy refinement, mar
   "request_id": "a47d1beb8c11b6ae897ab76cdbbf35a3",
   "results": [
     {
-      "ask_timestamp": "1734472800076125400,",
-      "bid_price": "2660,",
-      "bid_size": "1,",
-      "bid_timestamp": "1734472800076125400,",
-      "report_sequence": "2250337,",
+      "ask_size": 0,
+      "ask_timestamp": 1734472800076125400,
+      "bid_price": 2660,
+      "bid_size": 1,
+      "bid_timestamp": 1734472800076125400,
+      "channel": 360,
+      "report_sequence": 2250337,
       "sequence_number": 15357766,
-      "session_end_date": "2024-12-17,",
-      "ticker": "GCJ5,",
-      "timestamp": "1734472800076125400,"
+      "session_end_date": "2024-12-17",
+      "ticker": "GCJ5",
+      "timestamp": 1734472800076125400
     },
     {
-      "ask_price": "2685.9,",
-      "ask_size": "1,",
-      "ask_timestamp": "1734472755134391800,",
-      "bid_price": "2684.7,",
-      "bid_size": "1,",
-      "bid_timestamp": "1734472736352455200,",
-      "report_sequence": "2249723,",
-      "sequence_number": 15354716,
-      "session_end_date": "2024-12-17,",
-      "ticker": "GCJ5,",
-      "timestamp": "1734472755134391800,"
+      "ask_price": 2686,
+      "ask_size": 1,
+      "ask_timestamp": 1734472770000588000,
+      "bid_price": 2684.7,
+      "bid_size": 1,
+      "bid_timestamp": 1734472736352455200,
+      "channel": 360,
+      "report_sequence": 2249866,
+      "sequence_number": 15355476,
+      "session_end_date": "2024-12-17",
+      "ticker": "GCJ5",
+      "timestamp": 1734472770000588000
     }
   ],
   "status": "OK"
@@ -4926,26 +4912,16 @@ Use Cases: Cross-market analysis, diversified portfolio monitoring, global marke
 | `next_url` | string | If present, this value can be used to fetch the next page of data. |
 | `request_id` | string | A request id assigned by the server. |
 | `results` | array[object] | An array of results containing the requested data. |
-| `results[].break_even_price` | number | The price of the underlying asset for the contract to break even. For a call, this value is (strike price + premium paid). For a put, this value is (strike price - premium paid). |
-| `results[].details` | object | The details for this contract. |
 | `results[].error` | string | The error while looking for this ticker. |
-| `results[].fmv` | number | Fair Market Value is only available on Business plans. It is our proprietary algorithm to generate a real-time, accurate, fair market value of a tradable security. For more information, <a rel="nofollow" target="_blank" href="https://massive.com/contact">contact us</a>. |
 | `results[].fmv_last_updated` | integer | If Fair Market Value (FMV) is available, this field is the nanosecond timestamp of the last FMV calculation. |
-| `results[].greeks` | object | The greeks for this contract. There are certain circumstances where greeks will not be returned, such as options contracts that are deep in the money. See this <a href="https://massive.com/blog/greeks-and-implied-volatility/#testing" alt="link">article</a> for more information. |
-| `results[].implied_volatility` | number | The market's forecast for the volatility of the underlying asset, based on this option's current price. |
-| `results[].last_minute` | object | The most recent minute aggregate for this stock. |
-| `results[].last_quote` | object | The most recent quote for this contract. This is only returned if your current plan includes quotes. |
-| `results[].last_trade` | object | The most recent quote for this contract. This is only returned if your current plan includes trades. |
 | `results[].last_updated` | integer | The nanosecond timestamp of when this information was updated. |
 | `results[].market_status` | string | The market status for the market that trades this ticker. Possible values for stocks, options, crypto, and forex snapshots are open, closed, early_trading, or late_trading. Possible values for indices snapshots are regular_trading, closed, early_trading, and late_trading. |
 | `results[].message` | string | The error message while looking for this ticker. |
 | `results[].name` | string | The name of this contract. |
-| `results[].open_interest` | number | The quantity of this contract held at the end of the last trading day. |
 | `results[].session` | object | Comprehensive trading session metrics, detailing price changes, trading volume, and key price points (open, close, high, low) for the asset within the current trading day. Includes specific changes during early, regular, and late trading periods to enable detailed performance analysis and trend tracking. |
 | `results[].ticker` | string | The ticker symbol for the asset. |
 | `results[].timeframe` | enum: DELAYED, REAL-TIME | The time relevance of the data. |
 | `results[].type` | enum: stocks, options, fx, crypto, indices | The asset class for this ticker. |
-| `results[].underlying_asset` | object | Information on the underlying stock for this options contract.  The market data returned depends on your current stocks plan. |
 | `results[].value` | number | Value of Index. |
 | `status` | string | The status of this request's response. |
 
@@ -6454,20 +6430,16 @@ Use Cases: Cross-market analysis, diversified portfolio monitoring, global marke
 | `results[].fmv_last_updated` | integer | If Fair Market Value (FMV) is available, this field is the nanosecond timestamp of the last FMV calculation. |
 | `results[].greeks` | object | The greeks for this contract. There are certain circumstances where greeks will not be returned, such as options contracts that are deep in the money. See this <a href="https://massive.com/blog/greeks-and-implied-volatility/#testing" alt="link">article</a> for more information. |
 | `results[].implied_volatility` | number | The market's forecast for the volatility of the underlying asset, based on this option's current price. |
-| `results[].last_minute` | object | The most recent minute aggregate for this stock. |
 | `results[].last_quote` | object | The most recent quote for this contract. This is only returned if your current plan includes quotes. |
 | `results[].last_trade` | object | The most recent quote for this contract. This is only returned if your current plan includes trades. |
-| `results[].last_updated` | integer | The nanosecond timestamp of when this information was updated. |
 | `results[].market_status` | string | The market status for the market that trades this ticker. Possible values for stocks, options, crypto, and forex snapshots are open, closed, early_trading, or late_trading. Possible values for indices snapshots are regular_trading, closed, early_trading, and late_trading. |
 | `results[].message` | string | The error message while looking for this ticker. |
 | `results[].name` | string | The name of this contract. |
 | `results[].open_interest` | number | The quantity of this contract held at the end of the last trading day. |
 | `results[].session` | object | Comprehensive trading session metrics, detailing price changes, trading volume, and key price points (open, close, high, low) for the asset within the current trading day. Includes specific changes during early, regular, and late trading periods to enable detailed performance analysis and trend tracking. |
 | `results[].ticker` | string | The ticker symbol for the asset. |
-| `results[].timeframe` | enum: DELAYED, REAL-TIME | The time relevance of the data. |
 | `results[].type` | enum: stocks, options, fx, crypto, indices | The asset class for this ticker. |
 | `results[].underlying_asset` | object | Information on the underlying stock for this options contract.  The market data returned depends on your current stocks plan. |
-| `results[].value` | number | Value of Index. |
 | `status` | string | The status of this request's response. |
 
 ## Sample Response
@@ -7095,6 +7067,7 @@ Use Cases: Intraday analysis, algorithmic trading, market microstructure researc
 | `results[].exchange` | integer | The exchange ID. See <a href="https://massive.com/docs/rest/options/market-operations/exchanges" alt="Exchanges">Exchanges</a> for Massive's mapping of exchange IDs. |
 | `results[].participant_timestamp` | integer | The nanosecond accuracy Participant/Exchange Unix Timestamp. This is the timestamp of when the trade was actually generated at the exchange. |
 | `results[].price` | number | The price of the trade. This is the actual dollar value per whole share of this trade. A trade of 100 shares with a price of $2.00 would be worth a total dollar value of $200.00. |
+| `results[].sequence_number` | integer | The sequence number represents the sequence in which message events happened. These are increasing and unique per ticker symbol, but will not always be consecutive (e.g. 1, 2, 6, 9, 10, 11). |
 | `results[].sip_timestamp` | integer | The nanosecond accuracy SIP Unix Timestamp. This is the timestamp of when the SIP received this trade from the exchange which produced it. |
 | `results[].size` | number | The size of a trade (also known as volume). |
 | `status` | string | The status of this request's response. |
@@ -7110,6 +7083,7 @@ Use Cases: Intraday analysis, algorithmic trading, market microstructure researc
       "exchange": 46,
       "participant_timestamp": 1401715883806000000,
       "price": 6.91,
+      "sequence_number": 1,
       "sip_timestamp": 1401715883806000000,
       "size": 1
     },
@@ -7120,6 +7094,7 @@ Use Cases: Intraday analysis, algorithmic trading, market microstructure researc
       "exchange": 67,
       "participant_timestamp": 1401716547786000000,
       "price": 7.2,
+      "sequence_number": 2,
       "sip_timestamp": 1401716547786000000,
       "size": 1
     }
@@ -8061,7 +8036,7 @@ Use Cases: Market news feeds, alerting systems, portfolio monitoring, dashboards
       "tags": [
         "why it's moving"
       ],
-      "teaser": "Cava&#39;s first-quarter revenue increased 30.3% year-over-year to $256.3 million, which beat the consensus estimate of $245.935 million, according to Benzinga Pro.",
+      "teaser": "Cava&#39;s first-quarter revenue increased 30.3% year-over-year to $256.3 million, which beat the consensus estimate of $245.935 million, according to Benzinga Pro.",
       "tickers": [
         "CAVA"
       ],
@@ -9887,9 +9862,9 @@ Use Cases: Historical reference for ticker symbol changes, data continuity, and 
 
 **Description:**
 
-Plain-text content of specific sections from SEC filings. Currently supports the Risk Factors and Business sections, providing clean, structured text extracted directly from the filing.
+Retrieve clean plain-text extracts of key narrative sections from annual 10-K filings, including Business and Risk Factors. These provide detailed insights into company operations, strategy, markets, and material risks in structured AI-ready format.
 
-Use Cases: NLP pipelines, text extraction, research automation, topic analysis, building summaries or similarity models.
+Use Cases: NLP and text analysis, automated risk profiling, competitive benchmarking, topic modeling, summarization, and LLM knowledge base construction.
 
 ## Query Parameters
 
@@ -9975,13 +9950,134 @@ Use Cases: NLP pipelines, text extraction, research automation, topic analysis, 
 # REST
 ## Stocks
 
+### 13-F Filings
+
+**Endpoint:** `GET /stocks/filings/vX/13-F`
+
+**Description:**
+
+Retrieve quarterly holdings data from SEC Form 13-F filings submitted by institutional investment managers with at least $100 million in assets. Reports show equity positions, share counts, market values, investment discretion, and voting authority as of quarter-end.
+
+Use Cases: Tracking institutional ownership trends, replicating hedge fund strategies, portfolio overlap analysis, activist monitoring, and idea generation from smart-money flows.
+
+## Query Parameters
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `filer_cik` | string | No | SEC Central Index Key (10 digits, zero-padded) of the filing entity. |
+| `filer_cik.any_of` | string | No | Filter equal to any of the values. Multiple values can be specified by using a comma separated list. |
+| `filing_date` | string | No | Date when the filing was submitted to the SEC (formatted as YYYY-MM-DD). Value must be formatted 'yyyy-mm-dd'. |
+| `filing_date.gt` | string | No | Filter greater than the value. Value must be formatted 'yyyy-mm-dd'. |
+| `filing_date.gte` | string | No | Filter greater than or equal to the value. Value must be formatted 'yyyy-mm-dd'. |
+| `filing_date.lt` | string | No | Filter less than the value. Value must be formatted 'yyyy-mm-dd'. |
+| `filing_date.lte` | string | No | Filter less than or equal to the value. Value must be formatted 'yyyy-mm-dd'. |
+| `limit` | integer | No | Limit the maximum number of results returned. Defaults to '100' if not specified. The maximum allowed limit is '1000'. |
+| `sort` | string | No | A comma separated list of sort columns. For each column, append '.asc' or '.desc' to specify the sort direction. The sort column defaults to 'filing_date' if not specified. The sort order defaults to 'desc' if not specified. |
+
+## Response Attributes
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `next_url` | string | If present, this value can be used to fetch the next page. |
+| `request_id` | string | A request id assigned by the server. |
+| `results` | array[object] | The results for this request. |
+| `results[].accession_number` | string | Unique SEC accession number for the filing (e.g., '0000950123-24-011775'). |
+| `results[].cusip` | string | The CUSIP identifier for the held security. |
+| `results[].file_number` | string | The 13F-specific file number assigned to the filer. |
+| `results[].filer_cik` | string | SEC Central Index Key (10 digits, zero-padded) of the filing entity. |
+| `results[].filing_date` | string | Date when the filing was submitted to the SEC (formatted as YYYY-MM-DD). |
+| `results[].filing_url` | string | Direct URL to the filing on the SEC EDGAR website. |
+| `results[].film_number` | string | SEC EDGAR film number for the filing. |
+| `results[].form_type` | string | SEC form type (e.g., '13F-HR' for holdings report, '13F-HR/A' for amended report). |
+| `results[].investment_discretion` | string | Type of investment discretion. Possible values: SOLE, SHARED, DFND (defined). |
+| `results[].issuer_name` | string | Name of the company whose securities are held. |
+| `results[].market_value` | integer | Market value of the holding in USD. |
+| `results[].other_managers` | array[string] | List of names of other manager(s) sharing investment discretion over the reported holdings, if applicable. |
+| `results[].period` | string | The quarter end date that the filing covers (formatted as YYYY-MM-DD). |
+| `results[].put_call` | string | Indicates if the holding is a put or call option. Possible values: PUT, CALL, or empty for common stock. |
+| `results[].shares_or_principal_amount` | integer | Number of shares or principal amount held. |
+| `results[].shares_or_principal_type` | string | Type of amount reported. Possible values: SH (shares), PRN (principal amount). |
+| `results[].title_of_class` | string | Description of the class of securities held (e.g., 'COM', 'CL A'). |
+| `results[].voting_authority_none` | integer | Number of shares with no voting authority. |
+| `results[].voting_authority_shared` | integer | Number of shares with shared voting authority. |
+| `results[].voting_authority_sole` | integer | Number of shares with sole voting authority. |
+| `status` | enum: OK | The status of this request's response. |
+
+## Sample Response
+
+```json
+{
+  "next_url": "https://api.massive.com/stocks/filings/vX/13-F?cursor=eyJsaW1pd...",
+  "request_id": "a3f8b2c1d4e5f6g7",
+  "results": [
+    {
+      "accession_number": "0000950123-24-011775",
+      "cusip": "023135106",
+      "file_number": "028-04545",
+      "filer_cik": "0001067983",
+      "filing_date": "2024-11-14",
+      "filing_url": "https://www.sec.gov/Archives/edgar/data/1067983/0000950123-24-011775.txt",
+      "film_number": "241461756",
+      "form_type": "13F-HR",
+      "investment_discretion": "DFND",
+      "issuer_name": "AMAZON COM INC",
+      "market_value": 1439212920,
+      "other_managers": [
+        "Buffett Warren E"
+      ],
+      "period": "2024-09-30",
+      "put_call": null,
+      "shares_or_principal_amount": 7724000,
+      "shares_or_principal_type": "SH",
+      "title_of_class": "COM",
+      "voting_authority_none": 0,
+      "voting_authority_shared": 0,
+      "voting_authority_sole": 7724000
+    },
+    {
+      "accession_number": "0000950123-24-011775",
+      "cusip": "025816109",
+      "file_number": "028-04545",
+      "filer_cik": "0001067983",
+      "filing_date": "2024-11-14",
+      "filing_url": "https://www.sec.gov/Archives/edgar/data/1067983/0000950123-24-011775.txt",
+      "film_number": "241461756",
+      "form_type": "13F-HR",
+      "investment_discretion": "DFND",
+      "issuer_name": "AMERICAN EXPRESS CO",
+      "market_value": 311864270,
+      "other_managers": [
+        "Buffett Warren E"
+      ],
+      "period": "2024-09-30",
+      "put_call": null,
+      "shares_or_principal_amount": 1149942,
+      "shares_or_principal_type": "SH",
+      "title_of_class": "COM",
+      "voting_authority_none": 0,
+      "voting_authority_shared": 0,
+      "voting_authority_sole": 1149942
+    }
+  ],
+  "status": "OK"
+}
+```
+
+
+---
+
+# REST
+## Stocks
+
 ### 8-K Text
 
 **Endpoint:** `GET /stocks/filings/8-K/vX/text`
 
 **Description:**
 
-Parsed text content from SEC 8-K filings in plain AI-ready format. 8-K filings are "current reports" that public companies must file with the SEC to announce major events that shareholders should know about, such as acquisitions, leadership changes, or material agreements. The text returned is limited to that in the "Items" sections of the 8-K filings, excluding frontmatter and other boilerplate.
+Retrieve parsed plain-text content from the core Items sections of Form 8-K current reports. These disclose major material events such as acquisitions, leadership changes, material contracts, and other significant developments in AI-ready format.
+
+Use Cases: Real-time event detection and alerts, event-driven trading strategies, automated news digestion, M&A tracking, and corporate action timelines.
 
 ## Query Parameters
 
@@ -10066,13 +10162,289 @@ Parsed text content from SEC 8-K filings in plain AI-ready format. 8-K filings a
 # REST
 ## Stocks
 
+### Form 3
+
+**Endpoint:** `GET /stocks/filings/vX/form-3`
+
+**Description:**
+
+Retrieve SEC Form 3 filings that report the initial beneficial ownership of securities by corporate insiders (directors, officers, and 10%+ shareholders). These filings establish the baseline ownership position when an insider first becomes subject to Section 16 reporting requirements.
+
+Use Cases: Tracking new insider positions, monitoring executive and director ownership, due diligence on large shareholders, building ownership databases, and regulatory compliance checks.
+
+## Query Parameters
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `issuer_cik` | string | No | SEC Central Index Key of the issuer company (10 digits, zero-padded). |
+| `issuer_cik.any_of` | string | No | Filter equal to any of the values. Multiple values can be specified by using a comma separated list. |
+| `owner_cik` | string | No | SEC Central Index Key of the reporting owner (10 digits, zero-padded). |
+| `owner_cik.any_of` | string | No | Filter equal to any of the values. Multiple values can be specified by using a comma separated list. |
+| `tickers` | string | No | Filter for arrays that contain the value. |
+| `tickers.all_of` | string | No | Filter for arrays that contain all of the values. Multiple values can be specified by using a comma separated list. |
+| `tickers.any_of` | string | No | Filter for arrays that contain any of the values. Multiple values can be specified by using a comma separated list. |
+| `form_type` | string | No | SEC form type ('3' for initial filing, '3/A' for amendments). |
+| `filing_date` | string | No | Date when the filing was submitted to the SEC (formatted as YYYY-MM-DD). Value must be formatted 'yyyy-mm-dd'. |
+| `filing_date.gt` | string | No | Filter greater than the value. Value must be formatted 'yyyy-mm-dd'. |
+| `filing_date.gte` | string | No | Filter greater than or equal to the value. Value must be formatted 'yyyy-mm-dd'. |
+| `filing_date.lt` | string | No | Filter less than the value. Value must be formatted 'yyyy-mm-dd'. |
+| `filing_date.lte` | string | No | Filter less than or equal to the value. Value must be formatted 'yyyy-mm-dd'. |
+| `limit` | integer | No | Limit the maximum number of results returned. Defaults to '100' if not specified. The maximum allowed limit is '10000'. |
+| `sort` | string | No | A comma separated list of sort columns. For each column, append '.asc' or '.desc' to specify the sort direction. The sort column defaults to 'filing_date' if not specified. The sort order defaults to 'desc' if not specified. |
+
+## Response Attributes
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `next_url` | string | If present, this value can be used to fetch the next page. |
+| `request_id` | string | A request id assigned by the server. |
+| `results` | array[object] | The results for this request. |
+| `results[].accession_number` | string | Unique SEC accession number for the filing (e.g., '0001209191-25-012345'). |
+| `results[].aff_10b5_one` | boolean | Whether the transaction was made pursuant to a Rule 10b5-1 trading plan. |
+| `results[].date_of_original_submission` | string | Date of the original filing submission for amendment filings (3/A). Null for initial filings (formatted as YYYY-MM-DD). |
+| `results[].direct_or_indirect` | string | Whether ownership is direct ('D') or indirect ('I'). |
+| `results[].exercise_date` | string | Date exercisable for derivative securities (formatted as YYYY-MM-DD). |
+| `results[].exercise_price` | number | Exercise or conversion price of derivative securities in USD. |
+| `results[].filing_date` | string | Date when the filing was submitted to the SEC (formatted as YYYY-MM-DD). |
+| `results[].filing_url` | string | Direct URL to the filing on the SEC EDGAR website. |
+| `results[].footnotes` | array[object] | List of footnotes from the filing that are relevant to this row, each with an id and description. |
+| `results[].form_type` | string | SEC form type ('3' for initial filing, '3/A' for amendments). |
+| `results[].is_director` | boolean | Whether the reporting owner is a director of the issuer. |
+| `results[].is_officer` | boolean | Whether the reporting owner is an officer of the issuer. |
+| `results[].is_other` | boolean | Whether the reporting owner has another relationship with the issuer. |
+| `results[].is_ten_percent_owner` | boolean | Whether the reporting owner holds 10% or more of a class of equity securities. |
+| `results[].issuer_cik` | string | SEC Central Index Key of the issuer company (10 digits, zero-padded). |
+| `results[].issuer_name` | string | Name of the issuer company as reported in the filing. |
+| `results[].nature_of_ownership` | string | Nature of indirect ownership (e.g., 'By Trust', 'By Spouse'). |
+| `results[].not_subject_to_section_16` | boolean | Whether the reporting owner is not subject to Section 16 of the Securities Exchange Act. |
+| `results[].officer_title` | string | Title of the officer, if the reporting owner is an officer. |
+| `results[].owner_cik` | string | SEC Central Index Key of the reporting owner (10 digits, zero-padded). |
+| `results[].owner_name` | string | Name of the reporting owner (individual or entity). |
+| `results[].period_of_report` | string | Date of the event triggering the filing (formatted as YYYY-MM-DD). |
+| `results[].remarks` | string | Additional remarks included in the filing. |
+| `results[].security_title` | string | Title or description of the security (e.g., 'Common Stock', 'Stock Option'). |
+| `results[].security_type` | string | Type of security ('non-derivative' or 'derivative'). |
+| `results[].shares_owned` | number | Number of shares beneficially owned. |
+| `results[].tickers` | array[string] | A list of ticker symbols for the issuer company. Multiple symbols may indicate different share classes. |
+| `results[].underlying_security_shares` | number | Number of underlying shares for derivative holdings. |
+| `results[].underlying_security_title` | string | Title of the underlying security for derivative holdings. |
+| `status` | enum: OK | The status of this request's response. |
+
+## Sample Response
+
+```json
+{
+  "count": 1,
+  "next_url": "https://api.massive.com/stocks/filings/vX/form-3?cursor=eyJsaW1pd...",
+  "request_id": "047c7035a86042b1925118e5f68d81b0",
+  "results": [
+    {
+      "accession_number": "0001628280-26-022046",
+      "aff_10b5_one": null,
+      "date_of_original_submission": null,
+      "direct_or_indirect": "D",
+      "exercise_date": null,
+      "exercise_price": null,
+      "filing_date": "2026-03-30",
+      "filing_url": "https://www.sec.gov/Archives/edgar/data/1903508/0001628280-26-022046.txt",
+      "footnotes": [
+        {
+          "description": "The options granted on May 17, 2022 vested 100% on the third anniversary of the grant date.",
+          "id": "F1"
+        },
+        {
+          "description": "The exercise price of the options granted on May 17, 2022 was GPB 8.85, or approximately $11.80 based on a GBP to USD exchange rate as of March 27, 2026 of 1.3336.",
+          "id": "F2"
+        }
+      ],
+      "form_type": "3",
+      "is_director": false,
+      "is_officer": true,
+      "is_other": false,
+      "is_ten_percent_owner": false,
+      "issuer_cik": "0001903508",
+      "issuer_name": "Public Policy Holding Company, Inc.",
+      "nature_of_ownership": null,
+      "not_subject_to_section_16": null,
+      "officer_title": "Chief Administrative Officer",
+      "owner_cik": "0002125791",
+      "owner_name": "Mazzanti Matthew Ross",
+      "period_of_report": "2026-03-20",
+      "remarks": null,
+      "security_title": "Options",
+      "security_type": "derivative",
+      "shares_owned": null,
+      "tickers": [
+        "PPHC"
+      ],
+      "underlying_security_shares": 9000,
+      "underlying_security_title": "Common Stock, $0.001 par value"
+    }
+  ],
+  "status": "OK"
+}
+```
+
+
+---
+
+# REST
+## Stocks
+
+### Form 4
+
+**Endpoint:** `GET /stocks/filings/vX/form-4`
+
+**Description:**
+
+Retrieve SEC Form 4 filings that disclose all changes in beneficial ownership by corporate insiders. These must be filed within two business days of any transaction (purchases, sales, option exercises, grants, gifts, etc.) and include detailed transaction data such as dates, prices, share amounts, and transaction codes.
+
+Use Cases: Real-time insider trading monitoring, management confidence analysis, large trade detection, regulatory and Section 16 compliance tracking, and historical insider behavior studies.
+
+## Query Parameters
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `issuer_cik` | string | No | SEC Central Index Key of the issuer company (10 digits, zero-padded). |
+| `issuer_cik.any_of` | string | No | Filter equal to any of the values. Multiple values can be specified by using a comma separated list. |
+| `owner_cik` | string | No | SEC Central Index Key of the reporting owner (10 digits, zero-padded). |
+| `owner_cik.any_of` | string | No | Filter equal to any of the values. Multiple values can be specified by using a comma separated list. |
+| `tickers` | string | No | Filter for arrays that contain the value. |
+| `tickers.all_of` | string | No | Filter for arrays that contain all of the values. Multiple values can be specified by using a comma separated list. |
+| `tickers.any_of` | string | No | Filter for arrays that contain any of the values. Multiple values can be specified by using a comma separated list. |
+| `form_type` | string | No | SEC form type ('4' for standard filing, '4/A' for amendments). |
+| `filing_date` | string | No | Date when the filing was submitted to the SEC (formatted as YYYY-MM-DD). Value must be formatted 'yyyy-mm-dd'. |
+| `filing_date.gt` | string | No | Filter greater than the value. Value must be formatted 'yyyy-mm-dd'. |
+| `filing_date.gte` | string | No | Filter greater than or equal to the value. Value must be formatted 'yyyy-mm-dd'. |
+| `filing_date.lt` | string | No | Filter less than the value. Value must be formatted 'yyyy-mm-dd'. |
+| `filing_date.lte` | string | No | Filter less than or equal to the value. Value must be formatted 'yyyy-mm-dd'. |
+| `transaction_code` | string | No | SEC transaction code indicating the type of transaction (e.g., 'P' for purchase, 'S' for sale, 'A' for grant/award, 'M' for exercise/conversion). |
+| `limit` | integer | No | Limit the maximum number of results returned. Defaults to '100' if not specified. The maximum allowed limit is '10000'. |
+| `sort` | string | No | A comma separated list of sort columns. For each column, append '.asc' or '.desc' to specify the sort direction. The sort column defaults to 'filing_date' if not specified. The sort order defaults to 'desc' if not specified. |
+
+## Response Attributes
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `next_url` | string | If present, this value can be used to fetch the next page. |
+| `request_id` | string | A request id assigned by the server. |
+| `results` | array[object] | The results for this request. |
+| `results[].accession_number` | string | Unique SEC accession number for the filing (e.g., '0001209191-25-012345'). |
+| `results[].aff_10b5_one` | boolean | Whether the transaction was made pursuant to a Rule 10b5-1 trading plan. |
+| `results[].date_of_original_submission` | string | Date of the original filing submission for amendment filings (4/A). Null for standard filings (formatted as YYYY-MM-DD). |
+| `results[].deemed_execution_date` | string | Deemed execution date if different from transaction date (formatted as YYYY-MM-DD). |
+| `results[].direct_or_indirect` | string | Whether ownership is direct ('D') or indirect ('I'). |
+| `results[].equity_swap_involved` | boolean | Whether an equity swap was involved in the transaction. |
+| `results[].exercise_date` | string | Date exercisable for derivative securities (formatted as YYYY-MM-DD). |
+| `results[].exercise_price` | number | Exercise or conversion price of derivative securities in USD. |
+| `results[].expiration_date` | string | Expiration date for derivative securities (formatted as YYYY-MM-DD). |
+| `results[].filing_date` | string | Date when the filing was submitted to the SEC (formatted as YYYY-MM-DD). |
+| `results[].filing_url` | string | Direct URL to the filing on the SEC EDGAR website. |
+| `results[].footnotes` | array[object] | List of footnotes from the filing that are relevant to this row, each with an id and description. |
+| `results[].form_type` | string | SEC form type ('4' for standard filing, '4/A' for amendments). |
+| `results[].is_director` | boolean | Whether the reporting owner is a director of the issuer. |
+| `results[].is_officer` | boolean | Whether the reporting owner is an officer of the issuer. |
+| `results[].is_other` | boolean | Whether the reporting owner has another relationship with the issuer. |
+| `results[].is_ten_percent_owner` | boolean | Whether the reporting owner holds 10% or more of a class of equity securities. |
+| `results[].issuer_cik` | string | SEC Central Index Key of the issuer company (10 digits, zero-padded). |
+| `results[].issuer_name` | string | Name of the issuer company as reported in the filing. |
+| `results[].nature_of_ownership` | string | Nature of indirect ownership (e.g., 'By Trust', 'By Spouse'). |
+| `results[].not_subject_to_section_16` | boolean | Whether the reporting owner is not subject to Section 16 of the Securities Exchange Act. |
+| `results[].officer_title` | string | Title of the officer, if the reporting owner is an officer. |
+| `results[].owner_cik` | string | SEC Central Index Key of the reporting owner (10 digits, zero-padded). |
+| `results[].owner_name` | string | Name of the reporting owner (individual or entity). |
+| `results[].period_of_report` | string | Date of the event triggering the filing (formatted as YYYY-MM-DD). |
+| `results[].record_type` | string | Type of record in the filing (e.g., 'transaction', 'holding'). |
+| `results[].remarks` | string | Additional remarks included in the filing. |
+| `results[].security_title` | string | Title or description of the security (e.g., 'Common Stock', 'Stock Option'). |
+| `results[].security_type` | string | Type of security ('non-derivative' or 'derivative'). |
+| `results[].shares_owned_following_transaction` | number | Total shares beneficially owned after the transaction. |
+| `results[].tickers` | array[string] | A list of ticker symbols for the issuer company. Multiple symbols may indicate different share classes. |
+| `results[].transaction_acquired_disposed` | string | Whether shares were acquired ('A') or disposed of ('D'). |
+| `results[].transaction_code` | string | SEC transaction code indicating the type of transaction (e.g., 'P' for purchase, 'S' for sale, 'A' for grant/award, 'M' for exercise/conversion). |
+| `results[].transaction_date` | string | Date of the transaction (formatted as YYYY-MM-DD). |
+| `results[].transaction_price_per_share` | number | Price per share of the transaction in USD. |
+| `results[].transaction_shares` | number | Number of shares involved in the transaction. |
+| `results[].transaction_timeliness` | string | Timeliness of the filing: 'O' (on time) or 'L' (late). |
+| `results[].transaction_value` | number | Total value of the transaction in USD (transaction_shares x transaction_price_per_share). Null when shares or price is not reported. |
+| `results[].underlying_security_shares` | number | Number of underlying shares for derivative transactions. |
+| `results[].underlying_security_title` | string | Title of the underlying security for derivative transactions. |
+| `status` | enum: OK | The status of this request's response. |
+
+## Sample Response
+
+```json
+{
+  "next_url": "https://api.massive.com/stocks/filings/vX/form-4?cursor=eyJsaW1pd...",
+  "request_id": "047c7035a86042b1925118e5f68d81b0",
+  "results": [
+    {
+      "accession_number": "0002123147-26-000002",
+      "aff_10b5_one": false,
+      "date_of_original_submission": null,
+      "deemed_execution_date": "2026-03-27",
+      "direct_or_indirect": "D",
+      "equity_swap_involved": false,
+      "exercise_date": "2026-03-27",
+      "exercise_price": 88.167,
+      "expiration_date": "2026-03-27",
+      "filing_date": "2026-03-30",
+      "filing_url": "https://www.sec.gov/Archives/edgar/data/1469395/0002123147-26-000002.txt",
+      "footnotes": [
+        {
+          "description": "These shares were acquired at a price of 4955 argentine pesos per share. For reporting purposes, the exercise price has been converted to US dollars based on the exchange rate reported by Banco de la Nacion Argentina for the date of the acquisition, which was 1405 argentine pesos per US dollar. Then multiplied by 25, the Par value or rate of common shares to one ADR.",
+          "id": "F1"
+        }
+      ],
+      "form_type": "4",
+      "is_director": false,
+      "is_officer": true,
+      "is_other": false,
+      "is_ten_percent_owner": false,
+      "issuer_cik": "0001469395",
+      "issuer_name": "Pampa Energy Inc.",
+      "not_subject_to_section_16": false,
+      "officer_title": "Chief Financial Officer",
+      "owner_cik": "0002123147",
+      "owner_name": "Zuberbuhler Adolfo Fernando",
+      "period_of_report": "2026-03-27",
+      "record_type": "transaction",
+      "security_title": "Common Stock, $25 Par Value",
+      "security_type": "derivative",
+      "shares_owned_following_transaction": 2759,
+      "tickers": [
+        "PAM"
+      ],
+      "transaction_acquired_disposed": "A",
+      "transaction_code": "A",
+      "transaction_date": "2026-03-27",
+      "transaction_price_per_share": 88.167,
+      "transaction_shares": 12923,
+      "transaction_timeliness": "O",
+      "transaction_value": 1139382.141,
+      "underlying_security_shares": 12923,
+      "underlying_security_title": "PAMP"
+    }
+  ],
+  "status": "OK"
+}
+```
+
+
+---
+
+# REST
+## Stocks
+
 ### SEC EDGAR Index
 
 **Endpoint:** `GET /stocks/filings/vX/index`
 
 **Description:**
 
-SEC EDGAR master index providing metadata for all SEC filings including form types, filing dates, and direct links to source documents.
+Retrieve the master index of all SEC EDGAR filings, including form types, filing dates, CIKs, tickers, issuer names, accession numbers, and direct links to original documents on SEC.gov. This serves as the central discovery layer for the entire EDGAR database, allowing powerful filtering and sorting without manual website searches.
+
+Use Cases: Automated filing discovery and monitoring, regulatory compliance alerts, due diligence pipelines, competitive intelligence, and historical disclosure research.
 
 ## Query Parameters
 
@@ -10124,7 +10496,6 @@ SEC EDGAR master index providing metadata for all SEC filings including form typ
 
 ```json
 {
-  "count": 2,
   "next_url": "https://api.massive.com/stocks/filings/vX/index?cursor=eyJsaW1pd...",
   "request_id": "1daccfd9794e482e96d104dee6ed432b",
   "results": [
@@ -10163,9 +10534,9 @@ SEC EDGAR master index providing metadata for all SEC filings including form typ
 
 **Description:**
 
-The full taxonomy used to classify risk factors in the Risk Factors API. This includes the complete set of standardized categories applied across filings.
+Access the full standardized hierarchical taxonomy used to classify risk factors in SEC filings. It includes primary, secondary, and tertiary categories with detailed descriptions and examples for consistent analysis across companies and time periods.
 
-Use Cases: Building classifiers, mapping models to risk categories, UI filters, category-level analytics.
+Use Cases: Risk classification models, category-level analytics and dashboards, cross-company comparisons, quantitative risk scoring, and thematic monitoring.
 
 ## Query Parameters
 
@@ -10368,18 +10739,6 @@ Use Cases: Financial analysis, company valuation, asset assessment, debt analysi
 | `timeframe.gte` | string | No | Filter greater than or equal to the value. |
 | `timeframe.lt` | string | No | Filter less than the value. |
 | `timeframe.lte` | string | No | Filter less than or equal to the value. |
-| `max_ticker` | string | No | Filter equal to the value. |
-| `max_ticker.any_of` | string | No | Filter equal to any of the values. Multiple values can be specified by using a comma separated list. |
-| `max_ticker.gt` | string | No | Filter greater than the value. |
-| `max_ticker.gte` | string | No | Filter greater than or equal to the value. |
-| `max_ticker.lt` | string | No | Filter less than the value. |
-| `max_ticker.lte` | string | No | Filter less than or equal to the value. |
-| `min_ticker` | string | No | Filter equal to the value. |
-| `min_ticker.any_of` | string | No | Filter equal to any of the values. Multiple values can be specified by using a comma separated list. |
-| `min_ticker.gt` | string | No | Filter greater than the value. |
-| `min_ticker.gte` | string | No | Filter greater than or equal to the value. |
-| `min_ticker.lt` | string | No | Filter less than the value. |
-| `min_ticker.lte` | string | No | Filter less than or equal to the value. |
 | `limit` | integer | No | Limit the maximum number of results returned. Defaults to '100' if not specified. The maximum allowed limit is '50000'. |
 | `sort` | string | No | A comma separated list of sort columns. For each column, append '.asc' or '.desc' to specify the sort direction. The sort column defaults to 'period_end' if not specified. The sort order defaults to 'asc' if not specified. |
 
@@ -10619,363 +10978,6 @@ Use Cases: Cash flow analysis, liquidity assessment, operational efficiency eval
         "AAPL"
       ],
       "timeframe": "quarterly"
-    }
-  ],
-  "status": "OK"
-}
-```
-
-
----
-
-# REST
-## Stocks
-
-### Financials (Deprecated)
-
-**Endpoint:** `GET /vX/reference/financials`
-
-**Description:**
-
-Retrieve historical financial data for a specified stock ticker, derived from company SEC filings and extracted via XBRL. This experimental endpoint provides a wide range of financial metrics, including income statements, balance sheets, cash flow statements, and comprehensive income figures. By examining these standardized, machine-readable financial details, users can conduct in-depth fundamental analysis, track corporate performance trends, and compare financials across different reporting periods.
-
-Use Cases: Fundamental analysis, trend identification, cross-company comparisons, research & modeling.
-
-## Query Parameters
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `ticker` | string | No | Query by company ticker. |
-| `cik` | string | No | Query by central index key (<a rel="noopener noreferrer nofollow" target="_blank" href="https://www.sec.gov/edgar/searchedgar/cik.htm">CIK</a>) Number |
-| `company_name` | string | No | Query by company name. |
-| `sic` | string | No | Query by standard industrial classification (<a rel="noopener noreferrer nofollow" target="_blank" href="https://www.sec.gov/corpfin/division-of-corporation-finance-standard-industrial-classification-sic-code-list">SIC</a>) |
-| `filing_date` | string | No | Query by the date when the filing with financials data was filed in YYYY-MM-DD format.  Best used when querying over date ranges to find financials based on filings that happen in a time period.  Examples:  To get financials based on filings that have happened after January 1, 2009 use the query param filing_date.gte=2009-01-01  To get financials based on filings that happened in the year 2009 use the query params filing_date.gte=2009-01-01&filing_date.lt=2010-01-01 |
-| `period_of_report_date` | string | No | The period of report for the filing with financials data in YYYY-MM-DD format. |
-| `timeframe` | string | No | Query by timeframe. Annual financials originate from 10-K filings, and quarterly financials originate from 10-Q filings. Note: Most companies do not file quarterly reports for Q4 and instead include those financials in their annual report, so some companies my not return quarterly financials for Q4 |
-| `include_sources` | boolean | No | Whether or not to include the `xpath` and `formula` attributes for each financial data point. See the `xpath` and `formula` response attributes for more info. False by default. |
-| `company_name.search` | string | No | Search by company_name. |
-| `filing_date.gte` | string | No | Search by filing_date. |
-| `filing_date.gt` | string | No | Search by filing_date. |
-| `filing_date.lte` | string | No | Search by filing_date. |
-| `filing_date.lt` | string | No | Search by filing_date. |
-| `period_of_report_date.gte` | string | No | Search by period_of_report_date. |
-| `period_of_report_date.gt` | string | No | Search by period_of_report_date. |
-| `period_of_report_date.lte` | string | No | Search by period_of_report_date. |
-| `period_of_report_date.lt` | string | No | Search by period_of_report_date. |
-| `order` | string | No | Order results based on the `sort` field. |
-| `limit` | integer | No | Limit the number of results returned, default is 10 and max is 100. |
-| `sort` | string | No | Sort field used for ordering. |
-
-## Response Attributes
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `count` | integer | The total number of results for this request. |
-| `next_url` | string | If present, this value can be used to fetch the next page of data. |
-| `request_id` | string | A request id assigned by the server. |
-| `results` | array[object] | An array of results containing the requested data. |
-| `results[].acceptance_datetime` | string | The datetime (EST timezone) the filing was accepted by EDGAR in YYYYMMDDHHMMSS format. |
-| `results[].cik` | string | The CIK number for the company. |
-| `results[].company_name` | string | The company name. |
-| `results[].end_date` | string | The end date of the period that these financials cover in YYYYMMDD format. |
-| `results[].filing_date` | string | The date that the SEC filing which these financials were derived from was made available. Note that this is not necessarily the date when this information became public, as some companies may publish a press release before filing with the SEC. |
-| `results[].financials` | object | Structured financial statements with detailed data points and metadata. |
-| `results[].fiscal_period` | string | Fiscal period of the report according to the company (Q1, Q2, Q3, Q4, or FY). |
-| `results[].fiscal_year` | string | Fiscal year of the report according to the company. |
-| `results[].sic` | string | The Standard Industrial Classification (SIC) code for the company. |
-| `results[].source_filing_file_url` | string | The URL of the specific XBRL instance document within the SEC filing that these financials were derived from. |
-| `results[].source_filing_url` | string | The URL of the SEC filing that these financials were derived from. |
-| `results[].start_date` | string | The start date of the period that these financials cover in YYYYMMDD format. |
-| `results[].tickers` | array[string] | The list of ticker symbols for the company. |
-| `results[].timeframe` | string | The timeframe of the report (quarterly, annual or ttm). |
-| `status` | string | The status of this request's response. |
-
-## Sample Response
-
-```json
-{
-  "count": 1,
-  "next_url": "https://api.massive.com/vX/reference/financials?",
-  "request_id": "55eb92ed43b25568ab0cce159830ea34",
-  "results": [
-    {
-      "cik": "0001650729",
-      "company_name": "SiteOne Landscape Supply, Inc.",
-      "end_date": "2022-04-03",
-      "filing_date": "2022-05-04",
-      "financials": {
-        "balance_sheet": {
-          "assets": {
-            "label": "Assets",
-            "order": 100,
-            "unit": "USD",
-            "value": 2407400000
-          },
-          "current_assets": {
-            "label": "Current Assets",
-            "order": 200,
-            "unit": "USD",
-            "value": 1385900000
-          },
-          "current_liabilities": {
-            "label": "Current Liabilities",
-            "order": 700,
-            "unit": "USD",
-            "value": 597500000
-          },
-          "equity": {
-            "label": "Equity",
-            "order": 1400,
-            "unit": "USD",
-            "value": 1099200000
-          },
-          "equity_attributable_to_noncontrolling_interest": {
-            "label": "Equity Attributable To Noncontrolling Interest",
-            "order": 1500,
-            "unit": "USD",
-            "value": 0
-          },
-          "equity_attributable_to_parent": {
-            "label": "Equity Attributable To Parent",
-            "order": 1600,
-            "unit": "USD",
-            "value": 1099200000
-          },
-          "liabilities": {
-            "label": "Liabilities",
-            "order": 600,
-            "unit": "USD",
-            "value": 1308200000
-          },
-          "liabilities_and_equity": {
-            "label": "Liabilities And Equity",
-            "order": 1900,
-            "unit": "USD",
-            "value": 2407400000
-          },
-          "noncurrent_assets": {
-            "label": "Noncurrent Assets",
-            "order": 300,
-            "unit": "USD",
-            "value": 1021500000
-          },
-          "noncurrent_liabilities": {
-            "label": "Noncurrent Liabilities",
-            "order": 800,
-            "unit": "USD",
-            "value": 710700000
-          }
-        },
-        "cash_flow_statement": {
-          "exchange_gains_losses": {
-            "label": "Exchange Gains/Losses",
-            "order": 1000,
-            "unit": "USD",
-            "value": 100000
-          },
-          "net_cash_flow": {
-            "label": "Net Cash Flow",
-            "order": 1100,
-            "unit": "USD",
-            "value": -8600000
-          },
-          "net_cash_flow_continuing": {
-            "label": "Net Cash Flow, Continuing",
-            "order": 1200,
-            "unit": "USD",
-            "value": -8700000
-          },
-          "net_cash_flow_from_financing_activities": {
-            "label": "Net Cash Flow From Financing Activities",
-            "order": 700,
-            "unit": "USD",
-            "value": 150600000
-          },
-          "net_cash_flow_from_financing_activities_continuing": {
-            "label": "Net Cash Flow From Financing Activities, Continuing",
-            "order": 800,
-            "unit": "USD",
-            "value": 150600000
-          },
-          "net_cash_flow_from_investing_activities": {
-            "label": "Net Cash Flow From Investing Activities",
-            "order": 400,
-            "unit": "USD",
-            "value": -41000000
-          },
-          "net_cash_flow_from_investing_activities_continuing": {
-            "label": "Net Cash Flow From Investing Activities, Continuing",
-            "order": 500,
-            "unit": "USD",
-            "value": -41000000
-          },
-          "net_cash_flow_from_operating_activities": {
-            "label": "Net Cash Flow From Operating Activities",
-            "order": 100,
-            "unit": "USD",
-            "value": -118300000
-          },
-          "net_cash_flow_from_operating_activities_continuing": {
-            "label": "Net Cash Flow From Operating Activities, Continuing",
-            "order": 200,
-            "unit": "USD",
-            "value": -118300000
-          }
-        },
-        "comprehensive_income": {
-          "comprehensive_income_loss": {
-            "label": "Comprehensive Income/Loss",
-            "order": 100,
-            "unit": "USD",
-            "value": 40500000
-          },
-          "comprehensive_income_loss_attributable_to_noncontrolling_interest": {
-            "label": "Comprehensive Income/Loss Attributable To Noncontrolling Interest",
-            "order": 200,
-            "unit": "USD",
-            "value": 0
-          },
-          "comprehensive_income_loss_attributable_to_parent": {
-            "label": "Comprehensive Income/Loss Attributable To Parent",
-            "order": 300,
-            "unit": "USD",
-            "value": 40500000
-          },
-          "other_comprehensive_income_loss": {
-            "label": "Other Comprehensive Income/Loss",
-            "order": 400,
-            "unit": "USD",
-            "value": 40500000
-          },
-          "other_comprehensive_income_loss_attributable_to_parent": {
-            "label": "Other Comprehensive Income/Loss Attributable To Parent",
-            "order": 600,
-            "unit": "USD",
-            "value": 8200000
-          }
-        },
-        "income_statement": {
-          "basic_earnings_per_share": {
-            "label": "Basic Earnings Per Share",
-            "order": 4200,
-            "unit": "USD / shares",
-            "value": 0.72
-          },
-          "benefits_costs_expenses": {
-            "label": "Benefits Costs and Expenses",
-            "order": 200,
-            "unit": "USD",
-            "value": 768400000
-          },
-          "cost_of_revenue": {
-            "label": "Cost Of Revenue",
-            "order": 300,
-            "unit": "USD",
-            "value": 536100000
-          },
-          "costs_and_expenses": {
-            "label": "Costs And Expenses",
-            "order": 600,
-            "unit": "USD",
-            "value": 768400000
-          },
-          "diluted_earnings_per_share": {
-            "label": "Diluted Earnings Per Share",
-            "order": 4300,
-            "unit": "USD / shares",
-            "value": 0.7
-          },
-          "gross_profit": {
-            "label": "Gross Profit",
-            "order": 800,
-            "unit": "USD",
-            "value": 269200000
-          },
-          "income_loss_from_continuing_operations_after_tax": {
-            "label": "Income/Loss From Continuing Operations After Tax",
-            "order": 1400,
-            "unit": "USD",
-            "value": 32300000
-          },
-          "income_loss_from_continuing_operations_before_tax": {
-            "label": "Income/Loss From Continuing Operations Before Tax",
-            "order": 1500,
-            "unit": "USD",
-            "value": 36900000
-          },
-          "income_tax_expense_benefit": {
-            "label": "Income Tax Expense/Benefit",
-            "order": 2200,
-            "unit": "USD",
-            "value": 4600000
-          },
-          "interest_expense_operating": {
-            "label": "Interest Expense, Operating",
-            "order": 2700,
-            "unit": "USD",
-            "value": 4300000
-          },
-          "net_income_loss": {
-            "label": "Net Income/Loss",
-            "order": 3200,
-            "unit": "USD",
-            "value": 32300000
-          },
-          "net_income_loss_attributable_to_noncontrolling_interest": {
-            "label": "Net Income/Loss Attributable To Noncontrolling Interest",
-            "order": 3300,
-            "unit": "USD",
-            "value": 0
-          },
-          "net_income_loss_attributable_to_parent": {
-            "label": "Net Income/Loss Attributable To Parent",
-            "order": 3500,
-            "unit": "USD",
-            "value": 32300000
-          },
-          "net_income_loss_available_to_common_stockholders_basic": {
-            "label": "Net Income/Loss Available To Common Stockholders, Basic",
-            "order": 3700,
-            "unit": "USD",
-            "value": 32300000
-          },
-          "operating_expenses": {
-            "label": "Operating Expenses",
-            "order": 1000,
-            "unit": "USD",
-            "value": 228000000
-          },
-          "operating_income_loss": {
-            "label": "Operating Income/Loss",
-            "order": 1100,
-            "unit": "USD",
-            "value": 41200000
-          },
-          "participating_securities_distributed_and_undistributed_earnings_loss_basic": {
-            "label": "Participating Securities, Distributed And Undistributed Earnings/Loss, Basic",
-            "order": 3800,
-            "unit": "USD",
-            "value": 0
-          },
-          "preferred_stock_dividends_and_other_adjustments": {
-            "label": "Preferred Stock Dividends And Other Adjustments",
-            "order": 3900,
-            "unit": "USD",
-            "value": 0
-          },
-          "revenues": {
-            "label": "Revenues",
-            "order": 100,
-            "unit": "USD",
-            "value": 805300000
-          }
-        }
-      },
-      "fiscal_period": "Q1",
-      "fiscal_year": "2022",
-      "source_filing_file_url": "https://api.massive.com/v1/reference/sec/filings/0001650729-22-000010/files/site-20220403_htm.xml",
-      "source_filing_url": "https://api.massive.com/v1/reference/sec/filings/0001650729-22-000010",
-      "start_date": "2022-01-03"
     }
   ],
   "status": "OK"
@@ -11420,7 +11422,7 @@ Use Cases: Company valuation, comparative analysis, financial health assessment,
 
 **Description:**
 
-Retrieve bi-monthly aggregated short interest data reported to FINRA by broker-dealers for a specified stock ticker. Short interest represents the total number of shares sold short but not yet covered or closed out, serving as an indicator of market sentiment and potential price movements. High short interest can signal bearish sentiment or highlight opportunities such as potential short squeezes. This endpoint provides essential insights for investors monitoring market positioning and sentiment.
+Retrieve aggregated short interest data reported to FINRA by broker-dealers for a specified stock ticker on a two-week cadence. Short interest represents the total number of shares sold short but not yet covered or closed out, serving as an indicator of market sentiment and potential price movements. High short interest can signal bearish sentiment or highlight opportunities such as potential short squeezes. This endpoint provides essential insights for investors monitoring market positioning and sentiment.
 
 Use Cases: Market sentiment analysis, short-squeeze prediction, risk management, trading strategy refinement.
 
@@ -12251,27 +12253,18 @@ Use Cases: Cross-market analysis, diversified portfolio monitoring, global marke
 | `next_url` | string | If present, this value can be used to fetch the next page of data. |
 | `request_id` | string | A request id assigned by the server. |
 | `results` | array[object] | An array of results containing the requested data. |
-| `results[].break_even_price` | number | The price of the underlying asset for the contract to break even. For a call, this value is (strike price + premium paid). For a put, this value is (strike price - premium paid). |
-| `results[].details` | object | The details for this contract. |
 | `results[].error` | string | The error while looking for this ticker. |
 | `results[].fmv` | number | Fair Market Value is only available on Business plans. It is our proprietary algorithm to generate a real-time, accurate, fair market value of a tradable security. For more information, <a rel="nofollow" target="_blank" href="https://massive.com/contact">contact us</a>. |
 | `results[].fmv_last_updated` | integer | If Fair Market Value (FMV) is available, this field is the nanosecond timestamp of the last FMV calculation. |
-| `results[].greeks` | object | The greeks for this contract. There are certain circumstances where greeks will not be returned, such as options contracts that are deep in the money. See this <a href="https://massive.com/blog/greeks-and-implied-volatility/#testing" alt="link">article</a> for more information. |
-| `results[].implied_volatility` | number | The market's forecast for the volatility of the underlying asset, based on this option's current price. |
 | `results[].last_minute` | object | The most recent minute aggregate for this stock. |
 | `results[].last_quote` | object | The most recent quote for this contract. This is only returned if your current plan includes quotes. |
 | `results[].last_trade` | object | The most recent quote for this contract. This is only returned if your current plan includes trades. |
-| `results[].last_updated` | integer | The nanosecond timestamp of when this information was updated. |
 | `results[].market_status` | string | The market status for the market that trades this ticker. Possible values for stocks, options, crypto, and forex snapshots are open, closed, early_trading, or late_trading. Possible values for indices snapshots are regular_trading, closed, early_trading, and late_trading. |
 | `results[].message` | string | The error message while looking for this ticker. |
 | `results[].name` | string | The name of this contract. |
-| `results[].open_interest` | number | The quantity of this contract held at the end of the last trading day. |
 | `results[].session` | object | Comprehensive trading session metrics, detailing price changes, trading volume, and key price points (open, close, high, low) for the asset within the current trading day. Includes specific changes during early, regular, and late trading periods to enable detailed performance analysis and trend tracking. |
 | `results[].ticker` | string | The ticker symbol for the asset. |
-| `results[].timeframe` | enum: DELAYED, REAL-TIME | The time relevance of the data. |
 | `results[].type` | enum: stocks, options, fx, crypto, indices | The asset class for this ticker. |
-| `results[].underlying_asset` | object | Information on the underlying stock for this options contract.  The market data returned depends on your current stocks plan. |
-| `results[].value` | number | Value of Index. |
 | `status` | string | The status of this request's response. |
 
 ## Sample Response
