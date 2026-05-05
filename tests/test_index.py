@@ -1073,3 +1073,155 @@ class TestAttrsColumn:
         # endpoints via the attrs column.  We expect no matches.
         results = idx.search("limit")
         assert results == []
+
+
+class TestFormatTokenEconomy:
+    """Format-time output should drop content that wastes LLM tokens
+    without contributing to endpoint selection."""
+
+    def test_use_cases_trailer_stripped(self):
+        """The trailing ``Use Cases: ...`` marketing sentence is human
+        copy and should not appear in formatted output."""
+        ep = Endpoint(
+            title="Demo",
+            path="/v1/demo",
+            market="Stocks",
+            description=(
+                "Retrieve demo data with rich detail.\n\n"
+                "Use Cases: portfolio analysis, risk modeling, dashboards."
+            ),
+            path_prefix="/v1/demo",
+        )
+        out = ep.format("default")
+        assert "demo data" in out
+        assert "Use Cases" not in out
+        assert "portfolio analysis" not in out
+
+    def test_use_cases_preserved_in_fts_index(self):
+        """We strip ``Use Cases`` only at format time — the FTS index
+        keeps the full description so any rare query that lands on a
+        use-case phrase still ranks."""
+        ep = Endpoint(
+            title="Demo",
+            path="/v1/demo",
+            market="Stocks",
+            description=(
+                "Retrieve demo data.\n\nUse Cases: arbitrage_keyword_unique strategies."
+            ),
+            path_prefix="/v1/demo",
+        )
+        idx = EndpointIndex([ep])
+        results = idx.search("arbitrage_keyword_unique")
+        assert len(results) == 1
+
+    def test_more_collapses_filter_operators(self):
+        """``more`` mode drops ``.gt``/``.gte``/``.lt``/``.lte``/
+        ``.any_of`` variant rows and annotates the base field with the
+        available operators instead."""
+        ep = Endpoint(
+            title="Filterable",
+            path="/v1/filterable",
+            market="Stocks",
+            description="Test.",
+            query_params=[
+                QueryParam(
+                    name="ticker",
+                    type="string",
+                    required=False,
+                    description="Stock ticker.",
+                ),
+                QueryParam(
+                    name="ticker.any_of",
+                    type="string",
+                    required=False,
+                    description="Filter equal to any of the values.",
+                ),
+                QueryParam(
+                    name="ticker.gt",
+                    type="string",
+                    required=False,
+                    description="Filter greater than the value.",
+                ),
+                QueryParam(
+                    name="ticker.gte",
+                    type="string",
+                    required=False,
+                    description="Filter greater than or equal.",
+                ),
+                QueryParam(
+                    name="ticker.lt",
+                    type="string",
+                    required=False,
+                    description="Filter less than the value.",
+                ),
+                QueryParam(
+                    name="ticker.lte",
+                    type="string",
+                    required=False,
+                    description="Filter less than or equal.",
+                ),
+                QueryParam(
+                    name="limit",
+                    type="integer",
+                    required=False,
+                    description="Max rows.",
+                ),
+            ],
+            path_prefix="/v1/filterable",
+        )
+        out = ep.format("more")
+        # Base fields appear once with the operator annotation.
+        assert "ticker (string, optional) [filters: any_of, gt, gte, lt, lte]" in out
+        # No variant rows leak through.
+        assert "ticker.gt" not in out
+        assert "ticker.lte" not in out
+        assert "ticker.any_of" not in out
+        # Non-filterable params render normally (no annotation).
+        assert "limit (integer, optional): Max rows." in out
+
+    def test_verbose_keeps_every_param(self):
+        """Verbose is opt-in for full detail — every operator variant
+        line still renders."""
+        ep = Endpoint(
+            title="Filterable",
+            path="/v1/filterable",
+            market="Stocks",
+            description="Test.",
+            query_params=[
+                QueryParam(
+                    name="ticker",
+                    type="string",
+                    required=False,
+                    description="Stock ticker.",
+                ),
+                QueryParam(
+                    name="ticker.gt",
+                    type="string",
+                    required=False,
+                    description="Filter greater than the value.",
+                ),
+            ],
+            path_prefix="/v1/filterable",
+        )
+        out = ep.format("verbose")
+        assert "ticker.gt" in out
+
+    def test_orphan_dotted_param_passes_through(self):
+        """A dotted param whose base isn't in the list still renders —
+        we never drop unknown structure on the floor."""
+        ep = Endpoint(
+            title="Odd",
+            path="/v1/odd",
+            market="Stocks",
+            description="Test.",
+            query_params=[
+                # No base "foo" param — the dotted variant must still
+                # render so the LLM sees it.
+                QueryParam(
+                    name="foo.gt", type="string", required=False, description="Filter."
+                ),
+            ],
+            path_prefix="/v1/odd",
+        )
+        out = ep.format("more")
+        assert "foo.gt" in out
