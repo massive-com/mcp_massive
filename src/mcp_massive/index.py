@@ -146,7 +146,12 @@ def _detect_market(query: str) -> str | None:
     Two passes:
     1. Lowercase keyword match against :data:`_MARKET_KEYWORDS` — handles
        explicit asset-class words ("stock", "forex", "btc") and known
-       index/crypto symbols.
+       index/crypto symbols.  When the query matches keywords from
+       multiple markets (e.g. "crypto gainers" — "gainers" maps to
+       Stocks, "crypto" to Crypto) we prefer the more-specific market
+       over Stocks: Stocks owns generic terminology like
+       "gainers/losers/movers" only as a default, an explicit
+       Crypto/Forex/Options/Futures/Indices/Economy signal always wins.
     2. Uppercase ticker fallback: if the original-case query contains a
        2-5 letter uppercase token that isn't a known acronym
        (:data:`_TICKER_FALLBACK_EXCLUSIONS`), assume the user means a
@@ -154,9 +159,12 @@ def _detect_market(query: str) -> str | None:
        "<indicator> for <TICKER>" / "<verb> <TICKER>" patterns.
     """
     query_words = set(_TOKEN_RE.findall(query.lower()))
-    for market, keywords in _MARKET_KEYWORDS.items():
-        if query_words & keywords:
-            return market
+    matches = [m for m, kws in _MARKET_KEYWORDS.items() if query_words & kws]
+    non_stocks = [m for m in matches if m != "Stocks"]
+    if non_stocks:
+        return non_stocks[0]
+    if matches:
+        return matches[0]
     upper_tokens = set(_UPPER_TICKER_RE.findall(query))
     if upper_tokens - _TICKER_FALLBACK_EXCLUSIONS:
         return "Stocks"

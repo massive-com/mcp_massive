@@ -15,6 +15,7 @@ from mcp_massive.index import (
     parse_response_attributes,
     parse_table_rows,
     build_index,
+    _detect_market,
     _expand_query,
     _path_prefix,
 )
@@ -812,6 +813,42 @@ class TestMarketFilter:
         idx = EndpointIndex(self._endpoints())
         assert idx.search("") == []
         assert idx.search("!!!") == []  # only punctuation → no tokens
+
+
+class TestDetectMarket:
+    """Direct coverage for ``_detect_market`` precedence rules."""
+
+    def test_explicit_asset_class_keyword(self):
+        assert _detect_market("forex EUR/USD") == "Forex"
+        assert _detect_market("bitcoin price") == "Crypto"
+        assert _detect_market("call option strike") == "Options"
+
+    def test_specific_market_wins_over_stocks_when_both_match(self):
+        """``gainers/losers/movers`` are mapped to Stocks as defaults,
+        but an explicit Crypto/Forex/etc. keyword in the same query
+        must still win — otherwise "crypto gainers" routes to Stocks."""
+        assert _detect_market("crypto gainers") == "Crypto"
+        assert _detect_market("forex gainers") == "Forex"
+        assert _detect_market("biggest crypto movers") == "Crypto"
+        assert _detect_market("crypto losers today") == "Crypto"
+        assert _detect_market("fx top movers") == "Forex"
+
+    def test_stocks_keywords_alone_still_route_to_stocks(self):
+        """The default-to-Stocks path for casual gainers/losers/movers
+        queries must still work when no other market is mentioned."""
+        assert _detect_market("today's biggest gainers") == "Stocks"
+        assert _detect_market("biggest movers") == "Stocks"
+        assert _detect_market("top losers") == "Stocks"
+
+    def test_uppercase_ticker_fallback(self):
+        """Uppercase 2-5 letter token that isn't a known acronym
+        infers Stocks, even with no asset-class keyword."""
+        assert _detect_market("RSI for AAPL") == "Stocks"
+        assert _detect_market("trades for GOOG") == "Stocks"
+
+    def test_no_signal_returns_none(self):
+        assert _detect_market("documentation") is None
+        assert _detect_market("what does this do") is None
 
 
 class TestInferredMarketBoost:

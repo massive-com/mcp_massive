@@ -204,6 +204,16 @@ BENCHMARKS: list[tuple[str, list[str]]] = [
             "/v2/snapshot/locale/global/markets/crypto/tickers/{ticker}",
         ],
     ),
+    # Cross-market gainers/losers/movers — the explicit market keyword
+    # must beat the Stocks-default mapping for "gainers/losers/movers".
+    (
+        "crypto gainers",
+        ["/v2/snapshot/locale/global/markets/crypto/{direction}"],
+    ),
+    (
+        "forex gainers",
+        ["/v2/snapshot/locale/global/markets/forex/{direction}"],
+    ),
     (
         "VIX index history",
         ["/v2/aggs/ticker/{indicesTicker}/range/"],
