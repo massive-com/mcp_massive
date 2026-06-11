@@ -2,6 +2,50 @@ import re
 
 _DEFAULT_LLMS_FULL_TXT_URL = "https://massive.com/docs/rest/llms-full.txt"
 
+_DEFAULT_OPENAPI_URL = "https://api.massive.com/openapi"
+
+# Spec paths excluded from the index: legacy endpoints superseded by /v3
+# equivalents, and internal/undocumented routes.  These appear in the
+# OpenAPI spec without ``deprecated: true`` markers and are absent from
+# the public docs; left in the index they (a) enter the call_api
+# allowlist and (b) carry the same titles as their replacements
+# ("Trades", "Quotes (NBBO)"), so the search-time title dedup can
+# suppress the current endpoint in favor of the legacy one.  Remove
+# entries once the spec marks them deprecated.
+_EXCLUDED_PATH_PREFIXES: tuple[str, ...] = (
+    "/v2/ticks/",  # legacy tick data — superseded by /v3/trades and /v3/quotes
+    "/v1/historic/",  # legacy crypto/forex ticks — superseded by /v3/trades and /v3/quotes
+    "/stocks/dev/",  # internal development route
+    "/options/v3/",  # undocumented duplicates of /v3/trades|quotes/{optionsTicker}
+    # Marked "(Deprecated)" in the docs (superseded by /stocks/v1/*),
+    # but the live llms-full.txt is truncated before the Stocks section
+    # so that marker never reaches the enrichment pass.
+    "/v3/reference/dividends",
+    "/v3/reference/splits",
+)
+
+# Paths that the docs (llms-full.txt) list under multiple market sections.
+# OpenAPI has only one entry per path with a single primary tag, but search
+# quality depends on these surfacing under any of their applicable markets
+# (e.g. "indices snapshot" must find /v3/snapshot under the Indices market
+# boost).  Duplicating these at index build time preserves the per-market
+# entries the BM25 ranker is tuned around.
+_CROSS_MARKET_PATHS: dict[str, frozenset[str]] = {
+    "/v1/marketstatus/now": frozenset(
+        {"Crypto", "Forex", "Indices", "Options", "Stocks"}
+    ),
+    "/v1/marketstatus/upcoming": frozenset(
+        {"Crypto", "Forex", "Indices", "Options", "Stocks"}
+    ),
+    "/v3/reference/conditions": frozenset({"Crypto", "Options", "Stocks"}),
+    "/v3/reference/exchanges": frozenset({"Crypto", "Forex", "Options", "Stocks"}),
+    "/v3/reference/tickers": frozenset({"Crypto", "Forex", "Indices", "Stocks"}),
+    "/v3/reference/tickers/{ticker}": frozenset(
+        {"Crypto", "Forex", "Indices", "Stocks"}
+    ),
+    "/v3/snapshot": frozenset({"Crypto", "Forex", "Indices", "Options", "Stocks"}),
+}
+
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 
 # Aliases map abbreviations and synonyms to canonical terms that appear

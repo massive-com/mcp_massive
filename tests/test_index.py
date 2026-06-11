@@ -1,3 +1,4 @@
+import json
 from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
@@ -19,6 +20,7 @@ from mcp_massive.index import (
     _expand_query,
     _path_prefix,
 )
+from mcp_massive.openapi import OpenAPISpec, _market_for, _flatten_response_schema
 from tests.integration.mock_llms_txt import (
     aggs_section,
     llms_partial_txt,
@@ -683,6 +685,240 @@ class TestBuildIndex:
         assert first_call_url == custom_url
         # Should be exactly one fetch (no individual doc page fetches)
         assert mock_client.get.call_count == 1
+
+
+
+# OpenAPI spec: canonical endpoint set, including futures (which the
+# truncated markdown below lacks).
+_SPEC = {
+    "openapi": "3.0.0",
+    "paths": {
+        "/futures/v1/aggs/{ticker}": {
+            "get": {
+                "summary": "Futures Aggregates API",
+                "description": "Short OA description.",
+                "tags": ["futures:aggregates"],
+                "parameters": [
+                    {
+                        "name": "ticker",
+                        "in": "path",
+                        "required": True,
+                        "schema": {"type": "string"},
+                        "description": "Futures contract ticker.",
+                    },
+                    {
+                        "name": "resolution",
+                        "in": "query",
+                        "schema": {"type": "string"},
+                        "description": "Candle size.",
+                    },
+                    {
+                        "name": "X-Internal",
+                        "in": "header",
+                        "schema": {"type": "string"},
+                    },
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "results": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "close": {
+                                                        "type": "number",
+                                                        "description": "Close price.",
+                                                    }
+                                                },
+                                            },
+                                        }
+                                    },
+                                },
+                                "example": {"results": [{"close": 1.0}]},
+                            }
+                        }
+                    }
+                },
+            }
+        },
+        "/v3/trades/{cryptoTicker}": {
+            "get": {
+                "summary": "Crypto Trades API",
+                "description": "Short OA crypto description.",
+                "tags": ["crypto:trades"],
+            }
+        },
+        "/v1/old-thing/{ticker}": {
+            "get": {
+                "summary": "Old Thing API",
+                "deprecated": True,
+            }
+        },
+        "/v2/md-deprecated/{ticker}": {
+            "get": {
+                "summary": "Markdown Deprecated API",
+            }
+        },
+    },
+}
+
+class TestMarketFor:
+    def test_path_prefix_wins(self):
+        assert _market_for("/futures/v1/aggs/{ticker}", []) == "Futures"
+        assert _market_for("/crypto/v1/foo", ["stocks:bar"]) == "Crypto"
+
+    def test_placeholder_beats_tag(self):
+        assert (
+            _market_for("/v1/open-close/{indicesTicker}/{date}", ["stocks:open-close"])
+            == "Indices"
+        )
+
+    def test_tag_prefix(self):
+        assert _market_for("/v2/aggs/{cryptoTicker}", []) == "Crypto"
+        assert _market_for("/v1/foo", ["us_futures:contracts"]) == "Futures"
+        assert _market_for("/v1/foo", ["reference:indices:tickers"]) == "Indices"
+
+    def test_default_stocks(self):
+        assert _market_for("/v1/foo", []) == "Stocks"
+
+
+class TestFlattenResponseSchema:
+    def test_array_of_objects_uses_bracket_notation(self):
+        schema = {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {"close": {"type": "number"}},
+                    },
+                }
+            },
+        }
+        names = {ra.name for ra in _flatten_response_schema(schema)}
+        assert names == {"results", "results[].close"}
+
+    def test_all_of_branches_concatenated(self):
+        schema = {
+            "allOf": [
+                {"type": "object", "properties": {"a": {"type": "string"}}},
+                {"type": "object", "properties": {"b": {"type": "integer"}}},
+            ]
+        }
+        names = [ra.name for ra in _flatten_response_schema(schema)]
+        assert names == ["a", "b"]
+
+
+class TestOpenAPISpec:
+    def test_endpoints_from_spec(self):
+        spec = OpenAPISpec.from_text(json.dumps(_SPEC))
+        eps = {ep.path: ep for ep in spec.endpoints}
+
+        fut = eps["/futures/v1/aggs/{ticker}"]
+        # The redundant " API" summary suffix is stripped at parse time.
+        assert fut.title == "Futures Aggregates"
+        assert fut.market == "Futures"
+        # Header param excluded; path + query params kept.
+        assert [qp.name for qp in fut.query_params] == ["ticker", "resolution"]
+        assert fut.query_params[0].required is True
+        assert fut.query_params[1].required is False
+        assert {ra.name for ra in fut.response_attributes} == {
+            "results",
+            "results[].close",
+        }
+        assert "close" in fut.sample_response
+
+    def test_html_stripped_from_text(self):
+        spec = OpenAPISpec.from_text(
+            json.dumps(
+                {
+                    "paths": {
+                        "/v1/foo": {
+                            "get": {
+                                "summary": "Foo",
+                                "description": (
+                                    "Line one. <br /> <br /> See "
+                                    '<a href="/docs">the docs</a>.'
+                                ),
+                            }
+                        }
+                    }
+                }
+            )
+        )
+        desc = spec.endpoints[0].description
+        assert "<" not in desc
+        assert "Line one." in desc
+        assert "See the docs." in desc
+
+    def test_machine_generated_summaries_cleaned(self):
+        spec = OpenAPISpec.from_text(
+            json.dumps(
+                {
+                    "paths": {
+                        "/futures/v1/contracts": {
+                            "get": {"summary": "futures contracts API"}
+                        },
+                        "/futures/v1/snapshot": {
+                            "get": {"summary": "futures_snapshot_v1 API"}
+                        },
+                        "/futures/v1/market-status": {
+                            "get": {"summary": "Market Status API"}
+                        },
+                    }
+                }
+            )
+        )
+        titles = {ep.path: ep.title for ep in spec.endpoints}
+        assert titles["/futures/v1/contracts"] == "Futures Contracts"
+        assert titles["/futures/v1/snapshot"] == "Snapshot"
+        assert titles["/futures/v1/market-status"] == "Market Status"
+
+    def test_deprecated_operations_skipped(self):
+        spec = OpenAPISpec.from_text(json.dumps(_SPEC))
+        assert "/v1/old-thing/{ticker}" not in {ep.path for ep in spec.endpoints}
+
+    def test_cross_market_paths_duplicated(self):
+        spec = OpenAPISpec.from_text(
+            json.dumps({"paths": {"/v3/snapshot": {"get": {"summary": "Unified"}}}})
+        )
+        markets = {ep.market for ep in spec.endpoints}
+        assert markets == {"Crypto", "Forex", "Indices", "Options", "Stocks"}
+
+    def test_malformed_json_yields_empty(self):
+        spec = OpenAPISpec.from_text("not json{")
+        assert spec.raw == {}
+        assert spec.endpoints == []
+
+    def test_legacy_and_internal_paths_excluded(self):
+        spec = OpenAPISpec.from_text(
+            json.dumps(
+                {
+                    "paths": {
+                        "/v2/ticks/stocks/trades/{ticker}/{date}": {
+                            "get": {"summary": "Trades"}
+                        },
+                        "/v1/historic/forex/{from}/{to}/{date}": {
+                            "get": {"summary": "Historic Forex Ticks"}
+                        },
+                        "/stocks/dev/trades/{ticker}": {"get": {"summary": "Trades"}},
+                        "/options/v3/trades/{ticker}": {"get": {"summary": "Trades"}},
+                        "/v3/reference/dividends": {"get": {"summary": "Dividends"}},
+                        "/v3/reference/splits": {"get": {"summary": "Splits"}},
+                        "/v3/trades/{stockTicker}": {"get": {"summary": "Trades"}},
+                    }
+                }
+            )
+        )
+        assert [ep.path for ep in spec.endpoints] == ["/v3/trades/{stockTicker}"]
+
+
 
 
 class TestLlmsFullTxtE2E:
