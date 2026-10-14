@@ -20,6 +20,10 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that p
 
 Rather than exposing one tool per endpoint, this server gives the LLM three composable tools — **search**, **call**, and **query** — that cover the entire Massive.com API surface. Data can be stored in an in-memory SQLite database, and enriched with built-in financial functions.
 
+> [!TIP]
+> Don't want to install anything? Massive hosts this server at `https://mcp.massive.com`.
+> See the [AI Tools quickstart](https://massive.com/docs/ai-tools/quickstart?utm_campaign=mcp&utm_medium=referral&utm_source=github) for setup in each client.
+
 ## Tools
 
 | Tool | Description |
