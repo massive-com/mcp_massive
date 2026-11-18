@@ -40,7 +40,7 @@ Functions can be applied to API results or query output via the `apply` paramete
 |---|---|
 | **Greeks** | `bs_price`, `bs_delta`, `bs_gamma`, `bs_theta`, `bs_vega`, `bs_rho` — Black-Scholes option pricing and greeks |
 | **Returns** | `simple_return`, `log_return`, `cumulative_return`, `sharpe_ratio`, `sortino_ratio` |
-| **Technical** | `sma` (simple moving average), `ema` (exponential moving average) |
+| **Technical** | `sma` (simple moving average), `ema` (exponential moving average), `rsi`, `macd`, `bbands` (Bollinger Bands), `atr` (average true range) |
 
 ### Data Coverage
 

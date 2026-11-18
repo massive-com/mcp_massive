@@ -735,6 +735,16 @@ class TestRollingMean:
         result = _rolling_mean(arr, 3)
         assert len(result) == 0
 
+    def test_long_series_matches_per_window_mean(self):
+        rng = np.random.default_rng(0)
+        arr = 100.0 + np.cumsum(rng.normal(0.0, 1.0, 5000))
+        arr[[50, 51, 3000]] = np.nan
+        window = 200
+        result = _rolling_mean(arr, window)
+        windows = np.lib.stride_tricks.sliding_window_view(arr, window)
+        expected = np.concatenate([np.full(window - 1, np.nan), windows.mean(axis=1)])
+        np.testing.assert_allclose(result, expected, rtol=1e-12, equal_nan=True)
+
 
 class TestRollingStd:
     def test_basic(self):
@@ -759,6 +769,18 @@ class TestRollingStd:
         assert np.isnan(result[1])  # window [1, NaN]
         assert np.isnan(result[2])  # window [NaN, 3]
         assert not np.isnan(result[3])  # window [3, 4]
+
+    def test_long_series_matches_per_window_std(self):
+        rng = np.random.default_rng(1)
+        arr = 100.0 + np.cumsum(rng.normal(0.0, 1.0, 5000))
+        arr[[50, 3000]] = np.nan
+        window = 30
+        result = _rolling_std(arr, window)
+        windows = np.lib.stride_tricks.sliding_window_view(arr, window)
+        expected = np.concatenate(
+            [np.full(window - 1, np.nan), windows.std(axis=1, ddof=1)]
+        )
+        np.testing.assert_allclose(result, expected, rtol=1e-9, equal_nan=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1062,6 +1084,143 @@ class TestTechnicals:
         assert abs(sharpe - 6.324555320336759) < 0.01
 
 
+def _wilder(values: np.ndarray, period: int, start: int) -> np.ndarray:
+    """Wilder smoothing seeded with the mean of values[start : start + period]."""
+    out = np.full(len(values), np.nan)
+    seed = start + period - 1
+    if seed >= len(values):
+        return out
+    out[seed] = values[start : seed + 1].mean()
+    for i in range(seed + 1, len(values)):
+        out[i] = (out[i - 1] * (period - 1) + values[i]) / period
+    return out
+
+
+def _sma_seeded_ema(values: np.ndarray, period: int) -> np.ndarray:
+    out = np.full(len(values), np.nan)
+    first = int(np.argmax(~np.isnan(values)))
+    seed = first + period - 1
+    alpha = 2.0 / (period + 1.0)
+    out[seed] = values[first : seed + 1].mean()
+    for i in range(seed + 1, len(values)):
+        out[i] = alpha * values[i] + (1 - alpha) * out[i - 1]
+    return out
+
+
+def _apply_one(df: Table, function: str, inputs: dict) -> list:
+    result = apply_pipeline(
+        df, [{"function": function, "inputs": inputs, "output": "out"}]
+    )
+    return result["out"]
+
+
+def _as_array(values: list) -> np.ndarray:
+    return np.array([np.nan if v is None else v for v in values])
+
+
+class TestMoreTechnicals:
+    rng = np.random.default_rng(7)
+    close = 100.0 + np.cumsum(rng.normal(0.0, 1.0, 300))
+    high = close + rng.uniform(0.1, 2.0, 300)
+    low = close - rng.uniform(0.1, 2.0, 300)
+
+    def _df(self) -> Table:
+        return _table(
+            close=self.close.tolist(), high=self.high.tolist(), low=self.low.tolist()
+        )
+
+    def test_rsi_matches_wilder_reference(self):
+        out = _as_array(
+            _apply_one(self._df(), "rsi", {"column": "close", "window": 14})
+        )
+        diff = np.concatenate([[np.nan], np.diff(self.close)])
+        gain = _wilder(np.where(diff > 0, diff, 0.0), 14, 1)
+        loss = _wilder(np.where(diff < 0, -diff, 0.0), 14, 1)
+        expected = 100.0 * gain / (gain + loss)
+        assert np.isnan(out[:14]).all()
+        np.testing.assert_allclose(out, expected, rtol=1e-10, equal_nan=True)
+
+    def test_atr_matches_wilder_reference(self):
+        out = _as_array(
+            _apply_one(
+                self._df(),
+                "atr",
+                {"high": "high", "low": "low", "close": "close", "window": 14},
+            )
+        )
+        prev = np.concatenate([[np.nan], self.close[:-1]])
+        tr = np.maximum.reduce(
+            [self.high - self.low, np.abs(self.high - prev), np.abs(self.low - prev)]
+        )
+        expected = _wilder(tr, 14, 1)
+        assert np.isnan(out[:14]).all()
+        np.testing.assert_allclose(out, expected, rtol=1e-10, equal_nan=True)
+
+    def test_macd_lines(self):
+        df = self._df()
+        line = _as_array(_apply_one(df, "macd", {"column": "close"}))
+        signal = _as_array(
+            _apply_one(df, "macd", {"column": "close", "line": "signal"})
+        )
+        hist = _as_array(
+            _apply_one(df, "macd", {"column": "close", "line": "histogram"})
+        )
+        expected_line = _sma_seeded_ema(self.close, 12) - _sma_seeded_ema(
+            self.close, 26
+        )
+        expected_line[:25] = np.nan
+        np.testing.assert_allclose(line, expected_line, rtol=1e-10, equal_nan=True)
+        np.testing.assert_allclose(
+            signal, _sma_seeded_ema(expected_line, 9), rtol=1e-10, equal_nan=True
+        )
+        np.testing.assert_allclose(hist, line - signal, atol=1e-12, equal_nan=True)
+
+    def test_macd_invalid_line(self):
+        with pytest.raises(ValueError, match="Invalid MACD line"):
+            _apply_one(self._df(), "macd", {"column": "close", "line": "foo"})
+
+    def test_bbands(self):
+        df = self._df()
+        bands = {
+            band: _as_array(
+                _apply_one(
+                    df, "bbands", {"column": "close", "window": 20, "band": band}
+                )
+            )
+            for band in ("lower", "middle", "upper")
+        }
+        windows = np.lib.stride_tricks.sliding_window_view(self.close, 20)
+        pad = np.full(19, np.nan)
+        mid = np.concatenate([pad, windows.mean(axis=1)])
+        std = np.concatenate([pad, windows.std(axis=1)])
+        np.testing.assert_allclose(bands["middle"], mid, rtol=1e-12, equal_nan=True)
+        np.testing.assert_allclose(
+            bands["upper"], mid + 2 * std, rtol=1e-9, equal_nan=True
+        )
+        np.testing.assert_allclose(
+            bands["lower"], mid - 2 * std, rtol=1e-9, equal_nan=True
+        )
+
+    def test_bbands_invalid(self):
+        with pytest.raises(ValueError, match="Invalid Bollinger band"):
+            _apply_one(
+                self._df(), "bbands", {"column": "close", "window": 20, "band": "x"}
+            )
+        with pytest.raises(ValueError, match="window must be >= 2"):
+            _apply_one(
+                self._df(), "bbands", {"column": "close", "window": 1, "band": "upper"}
+            )
+
+    @pytest.mark.parametrize("function", ["rsi", "atr"])
+    def test_invalid_window(self, function):
+        if function == "rsi":
+            inputs = {"column": "close", "window": 0}
+        else:
+            inputs = {"high": "high", "low": "low", "close": "close", "window": 0}
+        with pytest.raises(ValueError, match="window must be >= 1"):
+            _apply_one(self._df(), function, inputs)
+
+
 # ---------------------------------------------------------------------------
 # Function Registry
 # ---------------------------------------------------------------------------
@@ -1086,6 +1245,10 @@ class TestFunctionRegistry:
             "cumulative_return",
             "sma",
             "ema",
+            "rsi",
+            "macd",
+            "bbands",
+            "atr",
             "sharpe_ratio",
             "sortino_ratio",
         }
