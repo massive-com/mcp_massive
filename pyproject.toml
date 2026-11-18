@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "mcp>=1.27.0",
     "certifi>=2026.2.25",
+    "fin-primitives>=3.9.0",
     "httpx>=0.28.1",
     "numpy>=2.4.4",
     "python-dotenv>=1.2.2",

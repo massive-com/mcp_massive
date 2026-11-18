@@ -13,6 +13,7 @@ from enum import Enum
 from typing import Any, Callable
 
 import numpy as np
+from fin_primitives import fast as fp_fast
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .index import _expand_query
@@ -411,40 +412,23 @@ def _impl_cumulative_return(table: Table, inputs: dict[str, Any]) -> np.ndarray:
 
 
 def _rolling_mean(arr: np.ndarray, window: int) -> np.ndarray:
-    """Compute rolling mean with NaN padding for incomplete windows."""
-    n = len(arr)
-    result = np.full(n, np.nan)
-    cumsum = np.zeros(n + 1)
-    for i in range(n):
-        cumsum[i + 1] = cumsum[i] + (arr[i] if not np.isnan(arr[i]) else 0.0)
-    for i in range(window - 1, n):
-        # Check if any value in window is NaN
-        has_nan = False
-        for j in range(i - window + 1, i + 1):
-            if np.isnan(arr[j]):
-                has_nan = True
-                break
-        if not has_nan:
-            result[i] = (cumsum[i + 1] - cumsum[i - window + 1]) / window
-    return result
+    """Compute rolling mean with NaN padding for incomplete windows.
+
+    A window containing NaN yields NaN. Runs as a single O(n) pass in
+    fin-primitives (Kahan-compensated running sum).
+    """
+    return fp_fast.sma(arr, window)
 
 
 def _rolling_std(arr: np.ndarray, window: int) -> np.ndarray:
     """Compute rolling sample standard deviation with NaN padding.
 
     Uses sample std (ddof=1), so windows smaller than 2 are undefined and
-    return all-NaN without invoking numpy std (avoids runtime warnings).
+    return all-NaN. A window containing NaN yields NaN.
     """
-    n = len(arr)
-    result = np.full(n, np.nan)
     if window < 2:
-        return result
-    for i in range(window - 1, n):
-        window_data = arr[i - window + 1 : i + 1]
-        if np.any(np.isnan(window_data)):
-            continue
-        result[i] = np.std(window_data, ddof=1)
-    return result
+        return np.full(len(arr), np.nan)
+    return fp_fast.stdev(arr, window, ddof=1)
 
 
 def _impl_sharpe_ratio(table: Table, inputs: dict[str, Any]) -> np.ndarray:
@@ -521,6 +505,54 @@ def _impl_ema(table: Table, inputs: dict[str, Any]) -> np.ndarray:
         else:
             result[i] = alpha * arr[i] + (1 - alpha) * result[i - 1]
     return result
+
+
+def _positive_int(
+    inputs: dict[str, Any], name: str, label: str, minimum: int = 1
+) -> int:
+    value = int(inputs[name])
+    if value < minimum:
+        raise ValueError(f"{label} {name} must be >= {minimum}")
+    return value
+
+
+def _impl_rsi(table: Table, inputs: dict[str, Any]) -> np.ndarray:
+    window = _positive_int(inputs, "window", "RSI")
+    return fp_fast.rsi(inputs["column"], window)
+
+
+_MACD_LINES = ("macd", "signal", "histogram")
+
+
+def _impl_macd(table: Table, inputs: dict[str, Any]) -> np.ndarray:
+    fast = _positive_int(inputs, "fast", "MACD")
+    slow = _positive_int(inputs, "slow", "MACD")
+    signal = _positive_int(inputs, "signal", "MACD")
+    line = inputs.get("line", "macd")
+    if line not in _MACD_LINES:
+        raise ValueError(f"Invalid MACD line '{line}'. Must be one of {_MACD_LINES}.")
+    result = fp_fast.macd(inputs["column"], fast, slow, signal)
+    return result[_MACD_LINES.index(line)]
+
+
+_BBANDS_BANDS = ("lower", "middle", "upper")
+
+
+def _impl_bbands(table: Table, inputs: dict[str, Any]) -> np.ndarray:
+    window = _positive_int(inputs, "window", "Bollinger", minimum=2)
+    num_std = float(inputs.get("num_std", 2.0))
+    band = inputs["band"]
+    if band not in _BBANDS_BANDS:
+        raise ValueError(
+            f"Invalid Bollinger band '{band}'. Must be one of {_BBANDS_BANDS}."
+        )
+    result = fp_fast.bbands(inputs["column"], window, num_std)
+    return result[_BBANDS_BANDS.index(band)]
+
+
+def _impl_atr(table: Table, inputs: dict[str, Any]) -> np.ndarray:
+    window = _positive_int(inputs, "window", "ATR")
+    return fp_fast.atr(inputs["high"], inputs["low"], inputs["close"], window)
 
 
 # ---------------------------------------------------------------------------
@@ -762,6 +794,115 @@ _register(
         ],
         output_dtype="Float64",
         impl=_impl_ema,
+    )
+)
+
+_register(
+    FunctionDef(
+        name="rsi",
+        category="Technical",
+        description="Relative Strength Index (0-100) with Wilder smoothing, as in TA-Lib and pandas-ta. First value at index window.",
+        params=[
+            ParamDef(name="column", kind=ParamKind.COLUMN, description="Column name"),
+            ParamDef(
+                name="window",
+                kind=ParamKind.LITERAL,
+                description="Lookback period (integer, e.g. 14)",
+            ),
+        ],
+        output_dtype="Float64",
+        impl=_impl_rsi,
+    )
+)
+
+_register(
+    FunctionDef(
+        name="macd",
+        category="Technical",
+        description="MACD (moving average convergence divergence), as in TA-Lib and pandas-ta. Returns the MACD line, its signal line, or the histogram (line - signal).",
+        params=[
+            ParamDef(name="column", kind=ParamKind.COLUMN, description="Column name"),
+            ParamDef(
+                name="fast",
+                kind=ParamKind.LITERAL,
+                required=False,
+                default=12,
+                description="Fast EMA period (default 12)",
+            ),
+            ParamDef(
+                name="slow",
+                kind=ParamKind.LITERAL,
+                required=False,
+                default=26,
+                description="Slow EMA period (default 26)",
+            ),
+            ParamDef(
+                name="signal",
+                kind=ParamKind.LITERAL,
+                required=False,
+                default=9,
+                description="Signal EMA period (default 9)",
+            ),
+            ParamDef(
+                name="line",
+                kind=ParamKind.LITERAL_STR,
+                required=False,
+                default="macd",
+                description='Output: "macd", "signal" or "histogram"',
+            ),
+        ],
+        output_dtype="Float64",
+        impl=_impl_macd,
+    )
+)
+
+_register(
+    FunctionDef(
+        name="bbands",
+        category="Technical",
+        description="Bollinger Bands: SMA middle band with upper/lower bands num_std population standard deviations away, as in TA-Lib and pandas-ta.",
+        params=[
+            ParamDef(name="column", kind=ParamKind.COLUMN, description="Column name"),
+            ParamDef(
+                name="window",
+                kind=ParamKind.LITERAL,
+                description="Window size (integer, >= 2, e.g. 20)",
+            ),
+            ParamDef(
+                name="band",
+                kind=ParamKind.LITERAL_STR,
+                description='Output band: "lower", "middle" or "upper"',
+            ),
+            ParamDef(
+                name="num_std",
+                kind=ParamKind.LITERAL,
+                required=False,
+                default=2.0,
+                description="Band width in standard deviations (default 2)",
+            ),
+        ],
+        output_dtype="Float64",
+        impl=_impl_bbands,
+    )
+)
+
+_register(
+    FunctionDef(
+        name="atr",
+        category="Technical",
+        description="Average True Range with Wilder smoothing, as in TA-Lib and pandas-ta. First value at index window.",
+        params=[
+            ParamDef(name="high", kind=ParamKind.COLUMN, description="High column"),
+            ParamDef(name="low", kind=ParamKind.COLUMN, description="Low column"),
+            ParamDef(name="close", kind=ParamKind.COLUMN, description="Close column"),
+            ParamDef(
+                name="window",
+                kind=ParamKind.LITERAL,
+                description="Lookback period (integer, e.g. 14)",
+            ),
+        ],
+        output_dtype="Float64",
+        impl=_impl_atr,
     )
 )
 
